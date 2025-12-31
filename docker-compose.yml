@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - repos_data:/app/repos
+      - chroma_data:/app/chroma_db
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@db:5432/docuverse
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - db
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+    command: npm run dev
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=docuverse
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Celery Worker (for background tasks)
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      - repos_data:/app/repos
+      - chroma_data:/app/chroma_db
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - redis
+      - backend
+    command: celery -A app.worker worker --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+  repos_data:
+  chroma_data:
+

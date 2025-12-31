@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Next.js
+.next/
+out/
+build/
+
+# Python
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.egg
+MANIFEST
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Misc
+*.bak
+*.tmp
+.cache/
+
+# ChromaDB
+chroma_data/
+
+# Repos (cloned repositories for analysis)
+backend/repos/
+

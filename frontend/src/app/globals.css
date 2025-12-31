@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+  }
+
+  * {
+    @apply border-dv-border;
+  }
+
+  body {
+    @apply bg-dv-bg text-dv-text;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dv-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dv-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dv-text-muted;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-dv-surface/80 backdrop-blur-xl border border-dv-border/50 rounded-2xl;
+  }
+
+  .glow-border {
+    @apply relative;
+  }
+
+  .glow-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl;
+    background: linear-gradient(
+      135deg,
+      rgba(88, 166, 255, 0.1),
+      rgba(163, 113, 247, 0.1)
+    );
+    z-index: -1;
+    filter: blur(20px);
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-dv-accent via-dv-purple to-dv-pink;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200
+           bg-gradient-to-r from-dv-accent to-dv-purple text-white
+           hover:shadow-lg hover:shadow-dv-accent/25 hover:scale-[1.02]
+           active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200
+           bg-dv-elevated border border-dv-border text-dv-text
+           hover:bg-dv-surface hover:border-dv-text-muted;
+  }
+
+  .code-line {
+    @apply font-mono text-sm leading-6;
+  }
+
+  .code-line.highlighted {
+    @apply bg-dv-accent/10 border-l-2 border-dv-accent;
+  }
+
+  .code-line-number {
+    @apply w-12 inline-block text-dv-text-muted text-right pr-4 select-none;
+  }
+}
+
+@layer utilities {
+  .animation-delay-150 {
+    animation-delay: 150ms;
+  }
+
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .animation-delay-500 {
+    animation-delay: 500ms;
+  }
+
+  /* Code syntax highlighting overrides */
+  .token.comment { @apply text-dv-text-muted; }
+  .token.keyword { @apply text-dv-purple; }
+  .token.string { @apply text-dv-success; }
+  .token.function { @apply text-dv-accent; }
+  .token.number { @apply text-dv-warning; }
+  .token.operator { @apply text-dv-pink; }
+  .token.class-name { @apply text-dv-cyan; }
+}
+

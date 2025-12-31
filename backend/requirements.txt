@@ -1,0 +1,52 @@
+# DocuVerse Backend Dependencies
+# FastAPI & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+pydantic==2.5.3
+pydantic-core==2.14.6  # Required for pydantic 2.5.3 compatibility
+pydantic-settings==2.1.0
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+httpx==0.26.0
+
+# GitHub Integration
+PyGithub==2.1.1
+gitpython==3.1.41
+
+# Tree-sitter Parsing
+tree-sitter==0.21.3
+tree-sitter-python==0.21.0
+tree-sitter-javascript==0.21.0
+tree-sitter-typescript==0.21.0
+tree-sitter-java==0.21.0
+tree-sitter-go==0.21.0
+tree-sitter-rust==0.21.1  # 0.21.0 doesn't exist, using 0.21.1
+
+# AI & LangChain
+langchain==0.1.0
+langchain-openai==0.0.2
+langchain-community==0.0.10
+openai==1.7.0
+tiktoken==0.5.2
+
+# Vector Database
+chromadb==0.4.22
+
+# Voice Synthesis
+elevenlabs==0.2.27
+
+# Utilities
+networkx==3.2.1
+python-dotenv==1.0.0
+aiofiles==23.2.1
+redis==5.0.1
+celery==5.3.6
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+asyncpg==0.29.0
+
