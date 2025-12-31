@@ -4,8 +4,8 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 pydantic==2.5.3
-pydantic-core==2.14.6  # Required for pydantic 2.5.3 compatibility
-pydantic-settings==2.1.0
+pydantic>=2.5,<3
+
 
 # Authentication
 python-jose[cryptography]==3.3.0
