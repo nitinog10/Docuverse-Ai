@@ -256,7 +256,4 @@ DocuVerse is designed with a **dark, modern IDE aesthetic**:
 
 MIT License - see LICENSE file for details.
 
----
-
-**Built with ❤️ for developers who believe documentation should be experienced, not just read.**
 
