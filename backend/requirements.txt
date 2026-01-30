@@ -4,7 +4,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 pydantic==2.5.3
-pydantic>=2.5,<3
+pydantic-settings==2.1.0
 
 
 # Authentication
@@ -35,8 +35,8 @@ tiktoken==0.5.2
 # Vector Database
 chromadb==0.4.22
 
-# Voice Synthesis
-elevenlabs==0.2.27
+# Voice Synthesis (Offline Text-to-Speech)
+pyttsx3==2.90
 
 # Utilities
 networkx==3.2.1

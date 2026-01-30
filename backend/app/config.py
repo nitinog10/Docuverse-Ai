@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = ""
     
-    # ElevenLabs
-    elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel voice
+    # Text-to-Speech (pyttsx3)
+    tts_voice_id: str = ""  # Leave empty to use system default voice
+    tts_rate: int = 150  # Words per minute (default speaking rate)
     
     # ChromaDB
     chroma_persist_directory: str = "./chroma_db"
@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra fields in .env file
 
 
 @lru_cache()

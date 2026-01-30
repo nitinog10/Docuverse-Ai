@@ -1,12 +1,13 @@
 """
-Audio Generator Service - ElevenLabs Integration
+Audio Generator Service - Text-to-Speech Integration
 
-Converts walkthrough scripts into high-quality AI voice narration.
+Converts walkthrough scripts into AI voice narration using pyttsx3.
 Creates the "Senior Engineer" persona voice.
 """
 
 import os
 import io
+import tempfile
 from typing import Optional, AsyncIterator
 import aiofiles
 
@@ -17,36 +18,46 @@ settings = get_settings()
 
 class AudioGeneratorService:
     """
-    ElevenLabs-based audio synthesis service.
+    pyttsx3-based audio synthesis service.
     
-    Converts text scripts into natural-sounding speech
-    with the "Senior Engineer" persona.
+    Converts text scripts into speech using the system's
+    text-to-speech engine (offline, no API key required).
     """
     
     def __init__(self):
-        self._client = None
-        self._voice_id = settings.elevenlabs_voice_id
+        self._engine = None
+        self._voice_id = settings.tts_voice_id
+        self._rate = settings.tts_rate
     
     def _initialize(self):
-        """Lazy initialization of ElevenLabs client"""
-        if self._client is not None:
+        """Lazy initialization of pyttsx3 engine"""
+        if self._engine is not None:
             return
         
         try:
-            from elevenlabs.client import ElevenLabs
+            import pyttsx3
             
-            self._client = ElevenLabs(
-                api_key=settings.elevenlabs_api_key
-            )
+            self._engine = pyttsx3.init()
             
-            print("✅ ElevenLabs client initialized")
+            # Configure voice settings
+            self._engine.setProperty('rate', self._rate)
+            
+            # Try to set the voice if specified
+            if self._voice_id:
+                voices = self._engine.getProperty('voices')
+                for voice in voices:
+                    if self._voice_id in voice.id:
+                        self._engine.setProperty('voice', voice.id)
+                        break
+            
+            print("✅ pyttsx3 TTS engine initialized")
             
         except ImportError:
-            print("⚠️ ElevenLabs not installed, using mock audio")
-            self._client = "mock"
+            print("⚠️ pyttsx3 not installed, using mock audio")
+            self._engine = "mock"
         except Exception as e:
-            print(f"⚠️ ElevenLabs initialization failed: {e}")
-            self._client = "mock"
+            print(f"⚠️ pyttsx3 initialization failed: {e}")
+            self._engine = "mock"
     
     async def generate_segment_audio(
         self,
@@ -61,34 +72,36 @@ class AudioGeneratorService:
             voice_id: Optional voice ID override
             
         Returns:
-            Audio data as bytes (MP3 format)
+            Audio data as bytes (WAV format)
         """
         self._initialize()
         
-        if self._client == "mock":
-            # Return a small silent MP3 for testing
+        if self._engine == "mock":
+            # Return a small silent audio for testing
             return self._generate_mock_audio(text)
         
         try:
-            voice = voice_id or self._voice_id
+            # Set voice if override provided
+            if voice_id:
+                voices = self._engine.getProperty('voices')
+                for voice in voices:
+                    if voice_id in voice.id:
+                        self._engine.setProperty('voice', voice.id)
+                        break
             
-            # Generate audio using ElevenLabs
-            audio = self._client.generate(
-                text=text,
-                voice=voice,
-                model="eleven_monolingual_v1",
-                voice_settings={
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                    "style": 0.0,
-                    "use_speaker_boost": True,
-                }
-            )
+            # Generate audio to a temporary file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
             
-            # Collect all audio chunks
-            audio_bytes = b""
-            for chunk in audio:
-                audio_bytes += chunk
+            self._engine.save_to_file(text, tmp_path)
+            self._engine.runAndWait()
+            
+            # Read the generated audio
+            with open(tmp_path, 'rb') as f:
+                audio_bytes = f.read()
+            
+            # Clean up temp file
+            os.unlink(tmp_path)
             
             return audio_bytes
             
@@ -111,13 +124,9 @@ class AudioGeneratorService:
         Returns:
             Complete audio as bytes
         """
-        all_audio = b""
-        
-        for segment in segments:
-            segment_audio = await self.generate_segment_audio(segment, voice_id)
-            all_audio += segment_audio
-        
-        return all_audio
+        # Combine all segments into one text for smoother audio
+        full_text = " ".join(segments)
+        return await self.generate_segment_audio(full_text, voice_id)
     
     async def stream_audio(
         self,
@@ -127,6 +136,9 @@ class AudioGeneratorService:
         """
         Stream audio generation for real-time playback.
         
+        Note: pyttsx3 doesn't support true streaming, so we generate
+        the full audio and yield it in chunks.
+        
         Args:
             text: Text to convert to speech
             voice_id: Optional voice ID override
@@ -134,29 +146,12 @@ class AudioGeneratorService:
         Yields:
             Audio chunks as bytes
         """
-        self._initialize()
+        audio_data = await self.generate_segment_audio(text, voice_id)
         
-        if self._client == "mock":
-            yield self._generate_mock_audio(text)
-            return
-        
-        try:
-            voice = voice_id or self._voice_id
-            
-            # Stream audio using ElevenLabs
-            audio_stream = self._client.generate(
-                text=text,
-                voice=voice,
-                model="eleven_monolingual_v1",
-                stream=True,
-            )
-            
-            for chunk in audio_stream:
-                yield chunk
-                
-        except Exception as e:
-            print(f"Error streaming audio: {e}")
-            yield self._generate_mock_audio(text)
+        # Yield in chunks of 4KB
+        chunk_size = 4096
+        for i in range(0, len(audio_data), chunk_size):
+            yield audio_data[i:i + chunk_size]
     
     def estimate_duration(self, text: str) -> float:
         """
@@ -169,57 +164,75 @@ class AudioGeneratorService:
     
     def _generate_mock_audio(self, text: str) -> bytes:
         """
-        Generate a minimal valid MP3 file for testing.
+        Generate a minimal valid WAV file for testing.
         
-        This creates a tiny silent MP3 so the API still works
+        This creates a tiny silent WAV so the API still works
         without actual audio generation.
         """
-        # Minimal MP3 header for a silent frame
-        # This is a valid but extremely short MP3 file
-        mp3_header = bytes([
-            0xFF, 0xFB, 0x90, 0x00,  # MP3 frame header
-            0x00, 0x00, 0x00, 0x00,  # Padding
-            0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
-        ])
-        # Repeat based on estimated duration
-        duration = self.estimate_duration(text)
-        frames_needed = max(1, int(duration * 38))  # ~38 frames per second
+        import struct
         
-        return mp3_header * min(frames_needed, 100)  # Cap to prevent huge files
+        # WAV file parameters
+        sample_rate = 22050
+        bits_per_sample = 16
+        num_channels = 1
+        
+        # Calculate duration based on text
+        duration = self.estimate_duration(text)
+        num_samples = int(sample_rate * min(duration, 5))  # Cap at 5 seconds
+        
+        # Generate silent audio data
+        audio_data = b'\x00\x00' * num_samples
+        
+        # Build WAV header
+        data_size = len(audio_data)
+        file_size = 36 + data_size
+        
+        wav_header = struct.pack(
+            '<4sI4s4sIHHIIHH4sI',
+            b'RIFF',
+            file_size,
+            b'WAVE',
+            b'fmt ',
+            16,  # Subchunk1Size
+            1,   # AudioFormat (PCM)
+            num_channels,
+            sample_rate,
+            sample_rate * num_channels * bits_per_sample // 8,  # ByteRate
+            num_channels * bits_per_sample // 8,  # BlockAlign
+            bits_per_sample,
+            b'data',
+            data_size,
+        )
+        
+        return wav_header + audio_data
     
     async def get_available_voices(self) -> list[dict]:
         """
-        Get list of available voices from ElevenLabs.
+        Get list of available voices from the system.
         
         Returns:
             List of voice information dictionaries
         """
         self._initialize()
-        if self._client == "mock":
+        if self._engine == "mock":
             return [
                 {
-                    "voice_id": "21m00Tcm4TlvDq8ikWAM",
-                    "name": "Rachel",
-                    "description": "Default female voice",
-                },
-                {
-                    "voice_id": "ErXwobaYiN019PkySvjV",
-                    "name": "Antoni",
-                    "description": "Male voice - good for technical content",
+                    "voice_id": "default",
+                    "name": "Default Voice",
+                    "description": "System default text-to-speech voice",
                 }
             ]
         
         try:
-            voices = self._client.voices.get_all()
+            voices = self._engine.getProperty('voices')
             
             return [
                 {
-                    "voice_id": v.voice_id,
-                    "name": v.name,
-                    "description": getattr(v, "description", ""),
+                    "voice_id": voice.id,
+                    "name": voice.name,
+                    "description": f"Language: {getattr(voice, 'languages', ['Unknown'])}",
                 }
-                for v in voices.voices
+                for voice in voices
             ]
             
         except Exception as e:
@@ -230,7 +243,7 @@ class AudioGeneratorService:
         self,
         audio_data: bytes,
         file_path: str,
-    )-> bool:
+    ) -> bool:
         """
         Save audio data to a file.
         

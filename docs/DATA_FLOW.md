@@ -31,7 +31,7 @@ flowchart TB
     subgraph External["External Services"]
         GitHub[GitHub API]
         OpenAI[OpenAI GPT-4o]
-        ElevenLabs[ElevenLabs TTS]
+        pyttsx3[pyttsx3 TTS]
     end
 
     %% Client to API connections
@@ -53,7 +53,7 @@ flowchart TB
     Auth --> GitHub
     RepoMgr --> GitHub
     ScriptGen --> OpenAI
-    AudioGen --> ElevenLabs
+    AudioGen --> pyttsx3
 
     style Client fill:#161b22,stroke:#58a6ff
     style API fill:#161b22,stroke:#a371f7
@@ -123,7 +123,7 @@ sequenceDiagram
     participant Backend
     participant ChromaDB
     participant OpenAI
-    participant ElevenLabs
+    participant pyttsx3
 
     User->>Player: Click "Play Walkthrough"
     Player->>Backend: POST /api/walkthroughs/generate
@@ -141,8 +141,8 @@ sequenceDiagram
     
     loop For each segment
         Player->>Backend: GET audio for segment
-        Backend->>ElevenLabs: Text-to-speech
-        ElevenLabs-->>Backend: Audio data
+        Backend->>pyttsx3: Text-to-speech
+        pyttsx3-->>Backend: Audio data
         Backend-->>Player: Audio segment
     end
     
@@ -185,7 +185,7 @@ sequenceDiagram
 | Repository Manager | GitHub, FileSystem | FileSystem, ChromaDB | GitHub API |
 | Parser Service | FileSystem | ChromaDB | Tree-sitter |
 | Script Generator | ChromaDB | Memory | OpenAI GPT-4o |
-| Audio Generator | Memory | FileSystem | ElevenLabs |
+| Audio Generator | Memory | FileSystem | pyttsx3 (local) |
 | Diagram Generator | ChromaDB, FileSystem | Memory | None |
 | Sandbox Executor | Memory | Memory | Python/Node runtime |
 

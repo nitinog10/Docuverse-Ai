@@ -39,12 +39,12 @@ DocuVerse introduces **Auto-Cast** — a YouTube-style playback system for code 
 ## 🛠️ Tech Stack
 
 | Component | Technology | Rationale |
-|-----------|------------|-----------|
+|-----------|------------|----------|
 | **Frontend** | Next.js + React | Fast rendering, SEO, Video Player UI |
 | **Backend** | FastAPI (Python) | AI pipelines, Tree-sitter bindings |
 | **Parsing** | Tree-sitter | Industry-standard, language agnostic |
 | **AI Processing** | LangChain + GPT-4o | Chain of Thought reasoning |
-| **Voice AI** | ElevenLabs API | Realistic, non-robotic voices |
+| **Voice AI** | pyttsx3 | Offline TTS, no API key required |
 | **Vector DB** | ChromaDB | Semantic code search |
 | **Visualization** | Mermaid.js | Auto-generated diagrams |
 
@@ -131,9 +131,9 @@ GITHUB_REDIRECT_URI=http://localhost:3000/api/auth/callback/github
 # OpenAI
 OPENAI_API_KEY=
 
-# ElevenLabs
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=
+# Text-to-Speech (optional - uses system defaults)
+TTS_VOICE_ID=
+TTS_RATE=150
 
 # ChromaDB
 CHROMA_PERSIST_DIRECTORY=./chroma_db
@@ -157,7 +157,7 @@ DocuVerseAI/
 │   │   │   ├── parser.py            # Tree-sitter parsing
 │   │   │   ├── vector_store.py      # ChromaDB integration
 │   │   │   ├── script_generator.py  # LangChain + GPT-4o
-│   │   │   ├── audio_generator.py   # ElevenLabs TTS
+│   │   │   ├── audio_generator.py   # pyttsx3 TTS
 │   │   │   ├── diagram_generator.py # Mermaid generation
 │   │   │   ├── dependency_analyzer.py # DAG construction
 │   │   │   └── indexer.py           # Repository indexing

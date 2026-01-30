@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+
 interface ScriptSegment {
   id: string
   order: number
@@ -55,20 +57,98 @@ export function WalkthroughPlayer({
   const [isMuted, setIsMuted] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showTranscript, setShowTranscript] = useState(true)
+  const [audioLoaded, setAudioLoaded] = useState(false)
+  const [audioError, setAudioError] = useState<string | null>(null)
+  const [useTTS, setUseTTS] = useState(true) // Use browser TTS
   
   const codeContainerRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const currentSegment = script.segments[currentSegmentIndex]
   const lines = code.split('\n')
 
+  // Initialize speech synthesis
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      speechSynthRef.current = new SpeechSynthesisUtterance()
+      speechSynthRef.current.rate = playbackSpeed
+      speechSynthRef.current.volume = isMuted ? 0 : 1
+      
+      // Set up event handlers
+      speechSynthRef.current.onend = () => {
+        // Move to next segment when speech ends
+        if (currentSegmentIndex < script.segments.length - 1) {
+          setCurrentSegmentIndex((idx) => idx + 1)
+          setSegmentProgress(0)
+        } else {
+          onPlayingChange(false)
+          setSegmentProgress(100)
+        }
+      }
+      
+      speechSynthRef.current.onerror = (event) => {
+        console.error('Speech synthesis error:', event)
+        setAudioError('Speech synthesis failed')
+      }
+    }
+    
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
+
+  // Update speech rate when playback speed changes
+  useEffect(() => {
+    if (speechSynthRef.current) {
+      speechSynthRef.current.rate = playbackSpeed
+    }
+  }, [playbackSpeed])
+
+  // Update speech volume when muted state changes
+  useEffect(() => {
+    if (speechSynthRef.current) {
+      speechSynthRef.current.volume = isMuted ? 0 : 1
+    }
+  }, [isMuted])
+
+  // Handle play/pause with speech synthesis
+  useEffect(() => {
+    if (!currentSegment || !useTTS) return
+    
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setAudioError('Speech synthesis not supported in this browser')
+      return
+    }
+
+    if (isPlaying) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel()
+      
+      // Speak current segment
+      if (speechSynthRef.current) {
+        speechSynthRef.current.text = currentSegment.text
+        speechSynthRef.current.rate = playbackSpeed
+        speechSynthRef.current.volume = isMuted ? 0 : 1
+        window.speechSynthesis.speak(speechSynthRef.current)
+      }
+    } else {
+      window.speechSynthesis.cancel()
+    }
+  }, [isPlaying, currentSegmentIndex, currentSegment, useTTS])
+
   // Calculate total progress
   const totalProgress = (() => {
+    if (!currentSegment || !script.segments.length) return 0
     const completedDuration = script.segments
       .slice(0, currentSegmentIndex)
       .reduce((sum, seg) => sum + seg.durationEstimate, 0)
     const currentDuration = currentSegment.durationEstimate * (segmentProgress / 100)
-    return ((completedDuration + currentDuration) / script.totalDuration) * 100
+    return script.totalDuration > 0 
+      ? ((completedDuration + currentDuration) / script.totalDuration) * 100 
+      : 0
   })()
 
   // Auto-scroll to highlighted lines
@@ -85,9 +165,9 @@ export function WalkthroughPlayer({
     }
   }, [currentSegment])
 
-  // Playback simulation
+  // Progress tracking for visual feedback
   useEffect(() => {
-    if (!isPlaying) return
+    if (!isPlaying || !currentSegment) return
 
     const duration = (currentSegment.durationEstimate * 1000) / playbackSpeed
     const interval = duration / 100
@@ -95,24 +175,19 @@ export function WalkthroughPlayer({
     const timer = setInterval(() => {
       setSegmentProgress((prev) => {
         if (prev >= 100) {
-          // Move to next segment
-          if (currentSegmentIndex < script.segments.length - 1) {
-            setCurrentSegmentIndex((idx) => idx + 1)
-            return 0
-          } else {
-            // End of walkthrough
-            onPlayingChange(false)
-            return 100
-          }
+          return 100
         }
         return prev + 1
       })
     }, interval)
 
     return () => clearInterval(timer)
-  }, [isPlaying, currentSegmentIndex, playbackSpeed, script.segments.length, currentSegment.durationEstimate, onPlayingChange])
+  }, [isPlaying, currentSegmentIndex, playbackSpeed, currentSegment])
 
   const handleSkipBack = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
     if (currentSegmentIndex > 0) {
       setCurrentSegmentIndex((idx) => idx - 1)
       setSegmentProgress(0)
@@ -120,6 +195,9 @@ export function WalkthroughPlayer({
   }
 
   const handleSkipForward = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
     if (currentSegmentIndex < script.segments.length - 1) {
       setCurrentSegmentIndex((idx) => idx + 1)
       setSegmentProgress(0)
@@ -127,6 +205,10 @@ export function WalkthroughPlayer({
   }
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+    
     const rect = e.currentTarget.getBoundingClientRect()
     const percentage = ((e.clientX - rect.left) / rect.width) * 100
     

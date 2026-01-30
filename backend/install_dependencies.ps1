@@ -54,7 +54,7 @@ if (-not $success) {
     Write-Host "      pip install --default-timeout=300 fastapi uvicorn pydantic" -ForegroundColor Gray
     Write-Host "      pip install --default-timeout=300 tree-sitter tree-sitter-python" -ForegroundColor Gray
     Write-Host "      pip install --default-timeout=300 langchain langchain-openai openai" -ForegroundColor Gray
-    Write-Host "      pip install --default-timeout=300 chromadb elevenlabs" -ForegroundColor Gray
+    Write-Host "      pip install --default-timeout=300 chromadb pyttsx3" -ForegroundColor Gray
     Write-Host "      pip install --default-timeout=300 -r requirements.txt" -ForegroundColor Gray
     Write-Host "`n   2. Use a different PyPI mirror:" -ForegroundColor White
     Write-Host "      pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt" -ForegroundColor Gray
