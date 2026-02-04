@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { motion } from 'framer-motion'
 import { 
   FolderGit2, 
   Plus, 
@@ -92,64 +93,92 @@ export default function DashboardPage() {
       <Sidebar />
       
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-            <p className="text-dv-text-muted">Manage your repositories and walkthroughs</p>
-          </div>
+        {/* Header with animations */}
+        <motion.div 
+          className="flex items-center justify-between mb-12"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          <motion.div
+            initial={{ opacity: 0, x: -30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1, duration: 0.6 }}
+          >
+            <h1 className="text-4xl font-bold mb-2 gradient-text">Dashboard</h1>
+            <p className="text-dv-text-muted text-lg">Manage your repositories and walkthroughs</p>
+          </motion.div>
           
-          <button
+          <motion.button
             onClick={() => setIsConnectModalOpen(true)}
             className="btn-primary flex items-center gap-2"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
           >
             <Plus className="w-5 h-5" />
             Connect Repository
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
 
-        {/* Search */}
-        <div className="relative mb-8">
+        {/* Search with animation */}
+        <motion.div 
+          className="relative mb-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.6 }}
+        >
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dv-text-muted" />
           <input
             type="text"
             placeholder="Search repositories..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-dv-surface border border-dv-border rounded-xl py-3 pl-12 pr-4
-                     text-dv-text placeholder:text-dv-text-muted
+            className="w-full bg-dv-surface border border-dv-border rounded-xl py-4 pl-12 pr-4
+                     text-dv-text placeholder:text-dv-text-muted text-lg
                      focus:outline-none focus:ring-2 focus:ring-dv-accent/50 focus:border-dv-accent
-                     transition-all"
+                     transition-all hover:border-dv-border/70"
           />
-        </div>
+        </motion.div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        {/* Stats with animation */}
+        <motion.div 
+          className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.6 }}
+        >
           <StatCard
             label="Connected Repos"
             value={connectedRepos.length}
             icon={<FolderGit2 className="w-5 h-5" />}
             color="accent"
+            delay={0.5}
           />
           <StatCard
             label="Indexed Files"
             value={247}
             icon={<FileCode className="w-5 h-5" />}
-            color="purple"
+            color="teal"
+            delay={0.6}
           />
           <StatCard
             label="Walkthroughs"
             value={38}
             icon={<Play className="w-5 h-5" />}
-            color="success"
+            color="emerald"
+            delay={0.7}
           />
           <StatCard
             label="Total Duration"
             value="2h 34m"
             icon={<Clock className="w-5 h-5" />}
-            color="warning"
+            color="indigo"
+            delay={0.8}
           />
-        </div>
+        </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Repositories */}
@@ -271,32 +300,51 @@ function StatCard({
   label, 
   value, 
   icon, 
-  color 
+  color,
+  delay
 }: { 
   label: string
   value: string | number
   icon: React.ReactNode
-  color: 'accent' | 'purple' | 'success' | 'warning'
+  color: 'accent' | 'teal' | 'emerald' | 'indigo'
+  delay?: number
 }) {
   const colorClasses = {
-    accent: 'bg-dv-accent/10 text-dv-accent',
-    purple: 'bg-dv-purple/10 text-dv-purple',
-    success: 'bg-dv-success/10 text-dv-success',
-    warning: 'bg-dv-warning/10 text-dv-warning',
+    accent: 'bg-dv-accent/15 text-dv-accent shadow-dv-accent/20',
+    teal: 'bg-dv-teal/15 text-dv-teal shadow-dv-teal/20',
+    emerald: 'bg-dv-emerald/15 text-dv-emerald shadow-dv-emerald/20',
+    indigo: 'bg-dv-indigo/15 text-dv-indigo shadow-dv-indigo/20',
+  }
+
+  const bgGradient = {
+    accent: 'from-dv-accent/5',
+    teal: 'from-dv-teal/5',
+    emerald: 'from-dv-emerald/5',
+    indigo: 'from-dv-indigo/5',
   }
 
   return (
-    <div className="glass-panel p-4 hover:-translate-y-0.5 transition-transform">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
+    <motion.div 
+      className={`glass-panel-elevated p-6 bg-gradient-to-br ${bgGradient[color]} to-transparent group cursor-pointer`}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: delay || 0, duration: 0.6 }}
+      whileHover={{ y: -8, scale: 1.02 }}
+    >
+      <div className="flex items-center gap-4">
+        <motion.div 
+          className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorClasses[color]} shadow-lg`}
+          whileHover={{ scale: 1.15 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
           {icon}
-        </div>
+        </motion.div>
         <div>
-          <p className="text-2xl font-bold">{value}</p>
-          <p className="text-sm text-dv-text-muted">{label}</p>
+          <p className="text-3xl font-bold text-dv-text">{value}</p>
+          <p className="text-sm text-dv-text-muted font-medium">{label}</p>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 

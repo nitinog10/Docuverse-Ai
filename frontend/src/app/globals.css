@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap');
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -17,14 +19,18 @@
     @apply border-dv-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-dv-bg text-dv-text;
   }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   ::-webkit-scrollbar-track {
@@ -32,17 +38,26 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-dv-border rounded-full;
+    @apply bg-dv-border rounded-full transition-colors;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-dv-text-muted;
+    @apply bg-dv-accent/50;
   }
 }
 
 @layer components {
   .glass-panel {
-    @apply bg-dv-surface/80 backdrop-blur-xl border border-dv-border/50 rounded-2xl;
+    @apply bg-dv-surface/70 backdrop-blur-2xl border border-dv-border/50 rounded-2xl
+           transition-all duration-300;
+  }
+
+  .glass-panel:hover {
+    @apply bg-dv-surface/80 border-dv-border/70;
+  }
+
+  .glass-panel-elevated {
+    @apply bg-dv-elevated/60 backdrop-blur-2xl border border-dv-border/40 rounded-2xl;
   }
 
   .glow-border {
@@ -54,40 +69,74 @@
     @apply absolute inset-0 rounded-2xl;
     background: linear-gradient(
       135deg,
-      rgba(88, 166, 255, 0.1),
-      rgba(163, 113, 247, 0.1)
+      rgba(100, 181, 246, 0.15),
+      rgba(38, 198, 218, 0.15)
     );
     z-index: -1;
-    filter: blur(20px);
+    filter: blur(24px);
+    transition: filter 0.3s ease;
+  }
+
+  .glow-border:hover::before {
+    filter: blur(32px);
   }
 
   .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-dv-accent via-dv-purple to-dv-pink;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-dv-accent via-dv-teal to-dv-accent;
+    background-size: 200% auto;
+    animation: gradient 3s ease infinite;
   }
 
   .btn-primary {
-    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200
-           bg-gradient-to-r from-dv-accent to-dv-purple text-white
-           hover:shadow-lg hover:shadow-dv-accent/25 hover:scale-[1.02]
-           active:scale-[0.98];
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300
+           bg-gradient-to-r from-dv-accent to-dv-teal text-white
+           hover:shadow-lg hover:shadow-dv-accent/40 hover:scale-[1.03]
+           active:scale-[0.97] relative overflow-hidden;
+  }
+
+  .btn-primary::before {
+    content: '';
+    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-300;
+  }
+
+  .btn-primary:hover::before {
+    @apply opacity-10;
   }
 
   .btn-secondary {
-    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300
            bg-dv-elevated border border-dv-border text-dv-text
-           hover:bg-dv-surface hover:border-dv-text-muted;
+           hover:bg-dv-surface hover:border-dv-text-muted hover:shadow-lg 
+           hover:shadow-dv-accent/10 hover:scale-[1.02];
+  }
+
+  .btn-icon {
+    @apply w-10 h-10 rounded-lg flex items-center justify-center
+           transition-all duration-300 hover:scale-110 hover:bg-dv-accent/20;
   }
 
   .code-line {
-    @apply font-mono text-sm leading-6;
+    @apply font-mono text-sm leading-6 transition-all duration-200;
   }
 
   .code-line.highlighted {
-    @apply bg-dv-accent/10 border-l-2 border-dv-accent;
+    @apply bg-dv-accent/20 border-l-3 border-dv-accent pl-3;
   }
 
   .code-line-number {
-    @apply w-12 inline-block text-dv-text-muted text-right pr-4 select-none;
+    @apply w-12 inline-block text-dv-text-muted text-right pr-4 select-none
+           transition-colors duration-200;
+  }
+
+  .shimmer-effect {
+    background: linear-gradient(
+      90deg,
+      rgba(100, 181, 246, 0) 0%,
+      rgba(100, 181, 246, 0.3) 50%,
+      rgba(100, 181, 246, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
   }
 }
 

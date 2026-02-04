@@ -9,22 +9,24 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // DocuVerse custom color palette - Dark theme inspired by modern IDEs
+        // Premium sophisticated color palette - Elegant dark theme
         'dv': {
-          'bg': '#0d1117',
-          'surface': '#161b22',
-          'elevated': '#21262d',
-          'border': '#30363d',
-          'text': '#c9d1d9',
-          'text-muted': '#8b949e',
-          'accent': '#58a6ff',
-          'accent-hover': '#79b8ff',
-          'success': '#3fb950',
-          'warning': '#d29922',
-          'error': '#f85149',
-          'purple': '#a371f7',
-          'pink': '#db61a2',
-          'cyan': '#39c5cf',
+          'bg': '#0f0f12',
+          'surface': '#1a1a1f',
+          'elevated': '#252530',
+          'border': '#3a3a42',
+          'text': '#e8e8ec',
+          'text-muted': '#9a9aa8',
+          'accent': '#64b5f6',
+          'accent-hover': '#7fbfff',
+          'accent-dark': '#42a5f5',
+          'success': '#4caf50',
+          'warning': '#ffb74d',
+          'error': '#ef5350',
+          'gold': '#d4af37',
+          'teal': '#26c6da',
+          'emerald': '#10b981',
+          'indigo': '#6366f1',
         },
       },
       fontFamily: {
@@ -33,24 +35,59 @@ const config: Config = {
         'sans': ['var(--font-dm-sans)', 'DM Sans', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       animation: {
-        'glow': 'glow 2s ease-in-out infinite alternate',
-        'float': 'float 6s ease-in-out infinite',
+        'glow': 'glow 3s ease-in-out infinite',
+        'glow-intense': 'glow-intense 2s ease-out infinite',
+        'float': 'float 6s cubic-bezier(0.4, 0.0, 0.2, 1) infinite',
         'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'gradient': 'gradient 8s linear infinite',
+        'shimmer': 'shimmer 2s infinite',
+        'slide-up': 'slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'fade-in-scale': 'fade-in-scale 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'bounce-subtle': 'bounce-subtle 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) infinite',
+        'rotate-slow': 'rotate-slow 20s linear infinite',
+        'pulse-accent': 'pulse-accent 2.5s ease-in-out infinite',
       },
       keyframes: {
         glow: {
-          '0%': { boxShadow: '0 0 20px rgba(88, 166, 255, 0.3)' },
-          '100%': { boxShadow: '0 0 40px rgba(88, 166, 255, 0.6)' },
+          '0%, 100%': { boxShadow: '0 0 20px rgba(100, 181, 246, 0.3), inset 0 0 20px rgba(100, 181, 246, 0.1)' },
+          '50%': { boxShadow: '0 0 40px rgba(100, 181, 246, 0.6), inset 0 0 30px rgba(100, 181, 246, 0.2)' },
+        },
+        'glow-intense': {
+          '0%': { boxShadow: '0 0 30px rgba(100, 181, 246, 0.5)' },
+          '100%': { boxShadow: '0 0 60px rgba(100, 181, 246, 0.8)' },
         },
         float: {
-          '0%, 100%': { transform: 'translateY(0)' },
-          '50%': { transform: 'translateY(-20px)' },
+          '0%, 100%': { transform: 'translateY(0px) scale(1)' },
+          '50%': { transform: 'translateY(-30px) scale(1.02)' },
         },
         gradient: {
           '0%': { backgroundPosition: '0% 50%' },
           '50%': { backgroundPosition: '100% 50%' },
           '100%': { backgroundPosition: '0% 50%' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-1000px 0' },
+          '100%': { backgroundPosition: '1000px 0' },
+        },
+        'slide-up': {
+          '0%': { opacity: '0', transform: 'translateY(30px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-scale': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        'bounce-subtle': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-10px)' },
+        },
+        'rotate-slow': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        'pulse-accent': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.6' },
         },
       },
       backgroundImage: {
