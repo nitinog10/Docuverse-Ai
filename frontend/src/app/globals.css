@@ -82,9 +82,12 @@
   }
 
   .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-dv-accent via-dv-teal to-dv-accent;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-dv-accent to-dv-accent;
+    background: linear-gradient(90deg, #64b5f6, #26c6da, #64b5f6);
     background-size: 200% auto;
     animation: gradient 3s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   .btn-primary {
