@@ -243,13 +243,3 @@ DocuVerse is designed with a **dark, modern IDE aesthetic**:
 - Gradient accents (blue → purple)
 - JetBrains Mono for code, DM Sans for UI
 
-## 🔮 Future Roadmap
-
-- [ ] Multi-language support (beyond Python/JS/TS)
-- [ ] Team collaboration features
-- [ ] Custom voice training
-- [ ] VS Code extension
-- [ ] CI/CD integration (auto-update docs on PR)
-- [ ] Interactive Q&A with codebase (RAG chatbot)
-
-
