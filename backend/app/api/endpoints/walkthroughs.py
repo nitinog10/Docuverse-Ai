@@ -182,10 +182,11 @@ async def get_walkthroughs_for_file(
     if not repo or repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    # Find walkthroughs for this file
+    # Find walkthroughs for this file in this repo
     walkthroughs = [
         wt for wt in walkthroughs_db.values()
         if wt.file_path == file_path
+        and wt.metadata.get("repository_id") == repo_id
     ]
     
     return walkthroughs

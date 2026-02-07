@@ -50,10 +50,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     
-    // Handle unauthorized errors - just clear token, don't redirect
-    // Let AuthProvider handle redirects
+    // Handle unauthorized errors - only clear token for auth-specific endpoints
+    // to prevent transient errors from logging the user out
     if (response.status === 401) {
-      if (typeof window !== 'undefined') {
+      const isAuthEndpoint = endpoint === '/auth/me' || endpoint === '/auth/verify'
+      if (isAuthEndpoint && typeof window !== 'undefined') {
         localStorage.removeItem('token')
       }
     }
