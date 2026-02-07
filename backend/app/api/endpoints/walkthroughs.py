@@ -74,7 +74,11 @@ async def generate_walkthrough(
     if not language:
         raise HTTPException(status_code=400, detail="Unsupported file type for walkthrough")
     
-    ast_nodes = parser.parse_file(content, language, safe_path)
+    # For text files (markdown, json, etc.), use section-based parsing
+    if parser.is_text_language(language):
+        ast_nodes = parser.parse_text_file(content, safe_path)
+    else:
+        ast_nodes = parser.parse_file(content, language, safe_path)
     
     # Generate walkthrough script
     script_generator = ScriptGeneratorService()

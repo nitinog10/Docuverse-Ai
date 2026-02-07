@@ -98,7 +98,7 @@ class ScriptGeneratorService:
         
         # Generate segments for each major code block
         for node in ast_nodes:
-            if node.type in [NodeType.FUNCTION, NodeType.CLASS, NodeType.METHOD]:
+            if node.type in [NodeType.FUNCTION, NodeType.CLASS, NodeType.METHOD, NodeType.SECTION]:
                 segment = await self._generate_node_segment(
                     node, lines, view_mode, len(segments)
                 )
@@ -223,6 +223,14 @@ class ScriptGeneratorService:
                         f"defined from line {node.start_line} to {node.end_line}. "
                         f"It contains the following methods: {methods_str}. "
                         f"Let's examine its structure."
+                    )
+                elif node.type == NodeType.SECTION:
+                    # For text/markdown sections, summarize the content
+                    content_preview = node_code.strip()[:300]
+                    text = (
+                        f"Now let's look at the section '{node.name}'. "
+                        f"This section spans lines {node.start_line} to {node.end_line}. "
+                        f"Here is what it says: {content_preview}"
                     )
                 else:
                     text = (
