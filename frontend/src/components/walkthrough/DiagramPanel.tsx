@@ -74,15 +74,26 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
   const [diagramType, setDiagramType] = useState<DiagramType>('flowchart')
   const [isLoading, setIsLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const renderCountRef = useRef(0)
 
   useEffect(() => {
     renderDiagram()
+    
+    // Cleanup function
+    return () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
+      }
+    }
   }, [diagramType])
 
   const renderDiagram = async () => {
     if (!containerRef.current) return
     
     setIsLoading(true)
+    
+    // Clear previous content to prevent React conflicts
+    containerRef.current.innerHTML = ''
     
     try {
       // Dynamic import of mermaid
@@ -107,15 +118,25 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
         },
       })
 
-      const { svg } = await mermaid.render('diagram', mockDiagrams[diagramType])
-      containerRef.current.innerHTML = svg
+      // Use unique ID for each render
+      renderCountRef.current += 1
+      const diagramId = `diagram-${renderCountRef.current}`
+      
+      const { svg } = await mermaid.render(diagramId, mockDiagrams[diagramType])
+      
+      // Only update if component is still mounted
+      if (containerRef.current) {
+        containerRef.current.innerHTML = svg
+      }
     } catch (error) {
       console.error('Error rendering diagram:', error)
-      containerRef.current.innerHTML = `
-        <div class="flex items-center justify-center h-full text-dv-text-muted">
-          <p>Error rendering diagram</p>
-        </div>
-      `
+      if (containerRef.current) {
+        containerRef.current.innerHTML = `
+          <div class="flex items-center justify-center h-full text-dv-text-muted">
+            <p>Error rendering diagram</p>
+          </div>
+        `
+      }
     } finally {
       setIsLoading(false)
     }
@@ -188,18 +209,19 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
       </div>
 
       {/* Diagram container */}
-      <div className="flex-1 overflow-auto p-4">
-        <div
-          ref={containerRef}
-          className="min-h-[300px] flex items-center justify-center"
-        >
-          {isLoading && (
+      <div className="flex-1 overflow-auto p-4 relative">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-dv-bg z-10">
             <div className="flex items-center gap-2 text-dv-text-muted">
               <RefreshCw className="w-5 h-5 animate-spin" />
               <span>Generating diagram...</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          className="min-h-[300px] flex items-center justify-center"
+        />
       </div>
 
       {/* Info */}
