@@ -36,20 +36,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
           position="bottom-right"
           toastOptions={{
             style: {
-              background: '#161b22',
-              color: '#c9d1d9',
-              border: '1px solid #30363d',
+              background: '#18181b',
+              color: '#fafafa',
+              border: '1px solid #3f3f46',
+              borderRadius: '12px',
+              fontSize: '14px',
             },
             success: {
               iconTheme: {
-                primary: '#3fb950',
-                secondary: '#161b22',
+                primary: '#22c55e',
+                secondary: '#18181b',
               },
             },
             error: {
               iconTheme: {
-                primary: '#f85149',
-                secondary: '#161b22',
+                primary: '#ef4444',
+                secondary: '#18181b',
               },
             },
           }}

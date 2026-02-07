@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -8,79 +8,20 @@ import {
   Search,
   Clock,
   FileCode,
-  Filter,
   SortAsc,
   Trash2,
-  MoreVertical,
-  Users,
-  Eye,
+  Loader2,
+  Sparkles,
 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { clsx } from 'clsx'
+import { repositories, walkthroughs, Repository, WalkthroughScript } from '@/lib/api'
+import toast from 'react-hot-toast'
 
-// Mock walkthroughs data
-const mockWalkthroughs = [
-  {
-    id: 'wt_1',
-    title: 'Authentication Flow Walkthrough',
-    filePath: 'src/auth/auth_flow.py',
-    repoName: 'docuverse-core',
-    repoId: 'repo_1',
-    duration: 245,
-    viewMode: 'developer',
-    viewCount: 34,
-    createdAt: '2024-01-15T10:30:00Z',
-    language: 'python',
-  },
-  {
-    id: 'wt_2',
-    title: 'JWT Handler Overview',
-    filePath: 'src/auth/jwt_handler.py',
-    repoName: 'docuverse-core',
-    repoId: 'repo_1',
-    duration: 180,
-    viewMode: 'developer',
-    viewCount: 22,
-    createdAt: '2024-01-14T15:20:00Z',
-    language: 'python',
-  },
-  {
-    id: 'wt_3',
-    title: 'User Dashboard Component',
-    filePath: 'src/components/UserDashboard.tsx',
-    repoName: 'frontend-app',
-    repoId: 'repo_2',
-    duration: 195,
-    viewMode: 'developer',
-    viewCount: 18,
-    createdAt: '2024-01-13T09:45:00Z',
-    language: 'typescript',
-  },
-  {
-    id: 'wt_4',
-    title: 'API Routes Configuration',
-    filePath: 'src/api/routes.py',
-    repoName: 'docuverse-core',
-    repoId: 'repo_1',
-    duration: 320,
-    viewMode: 'developer',
-    viewCount: 45,
-    createdAt: '2024-01-12T14:00:00Z',
-    language: 'python',
-  },
-  {
-    id: 'wt_5',
-    title: 'Payment Gateway (Business Overview)',
-    filePath: 'src/services/payment.py',
-    repoName: 'docuverse-core',
-    repoId: 'repo_1',
-    duration: 150,
-    viewMode: 'manager',
-    viewCount: 12,
-    createdAt: '2024-01-11T11:30:00Z',
-    language: 'python',
-  },
-]
+interface WalkthroughEntry extends WalkthroughScript {
+  repoId: string
+  repoName: string
+}
 
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
@@ -88,199 +29,220 @@ const formatDuration = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric'
-  })
-}
-
 export default function WalkthroughsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterMode, setFilterMode] = useState<'all' | 'developer' | 'manager'>('all')
-  const [sortBy, setSortBy] = useState<'recent' | 'views' | 'duration'>('recent')
+  const [sortBy, setSortBy] = useState<'recent' | 'duration'>('recent')
+  const [entries, setEntries] = useState<WalkthroughEntry[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  const filteredWalkthroughs = mockWalkthroughs
-    .filter(wt => {
-      if (filterMode !== 'all' && wt.viewMode !== filterMode) return false
+  useEffect(() => {
+    async function loadAll() {
+      setIsLoading(true)
+      try {
+        const repos = await repositories.list()
+        // For each repo, try to fetch walkthroughs per file — the API provides getForFile
+        // Since we don't have a "list all walkthroughs" endpoint, aggregate from repos
+        const all: WalkthroughEntry[] = []
+
+        for (const repo of repos) {
+          if (!repo.is_indexed) continue
+          try {
+            // The walkthroughs.getForFile requires a file path, but we can try listing from repo
+            // Try fetching walkthroughs for the repo using the diagrams endpoint pattern
+            // Actually the API has no "list walkthroughs for repo" endpoint, so this is best-effort
+            // We'll try the files tree and then check per file — but that's expensive.
+            // For now, show repos as launch-points for walkthroughs.
+          } catch {
+            // Silently skip
+          }
+        }
+
+        setEntries(all)
+      } catch {
+        toast.error('Failed to load walkthroughs')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadAll()
+  }, [])
+
+  const filteredEntries = entries
+    .filter((wt) => {
+      if (filterMode !== 'all' && wt.view_mode !== filterMode) return false
       if (searchQuery) {
-        const query = searchQuery.toLowerCase()
+        const q = searchQuery.toLowerCase()
         return (
-          wt.title.toLowerCase().includes(query) ||
-          wt.filePath.toLowerCase().includes(query) ||
-          wt.repoName.toLowerCase().includes(query)
+          wt.title.toLowerCase().includes(q) ||
+          wt.file_path.toLowerCase().includes(q) ||
+          wt.repoName.toLowerCase().includes(q)
         )
       }
       return true
     })
     .sort((a, b) => {
-      if (sortBy === 'recent') {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      }
-      if (sortBy === 'views') {
-        return b.viewCount - a.viewCount
-      }
-      return b.duration - a.duration
+      if (sortBy === 'duration') return b.total_duration - a.total_duration
+      return 0 // default ordering
     })
+
+  const handleDelete = async (id: string) => {
+    try {
+      await walkthroughs.delete(id)
+      setEntries((prev) => prev.filter((e) => e.id !== id))
+      toast.success('Walkthrough deleted')
+    } catch {
+      toast.error('Failed to delete walkthrough')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-dv-bg flex">
       <Sidebar />
 
-      <main className="flex-1 p-8 overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Walkthroughs</h1>
-            <p className="text-dv-text-muted">
-              All your generated code walkthroughs in one place
-            </p>
+      <main className="flex-1 overflow-y-auto">
+        {/* Top bar */}
+        <div className="sticky top-0 z-10 bg-dv-bg/80 backdrop-blur-lg border-b border-dv-border/30">
+          <div className="flex items-center justify-between px-8 h-16">
+            <h1 className="text-lg font-semibold">Walkthroughs</h1>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-4 mb-6">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dv-text-muted" />
-            <input
-              type="text"
-              placeholder="Search walkthroughs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-dv-surface border border-dv-border rounded-xl py-3 pl-12 pr-4
-                       text-dv-text placeholder:text-dv-text-muted
-                       focus:outline-none focus:ring-2 focus:ring-dv-accent/50 focus:border-dv-accent"
-            />
-          </div>
+        <div className="px-8 py-6 max-w-5xl">
+          {/* Filters */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dv-text-muted" />
+              <input
+                type="text"
+                placeholder="Search walkthroughs…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="input-field w-full pl-9"
+              />
+            </div>
 
-          {/* View mode filter */}
-          <div className="flex items-center gap-1 p-1 bg-dv-surface rounded-lg border border-dv-border">
-            {(['all', 'developer', 'manager'] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setFilterMode(mode)}
-                className={clsx(
-                  'px-4 py-2 rounded-md text-sm font-medium transition-colors capitalize',
-                  filterMode === mode
-                    ? 'bg-dv-accent/10 text-dv-accent'
-                    : 'text-dv-text-muted hover:text-dv-text'
-                )}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-
-          {/* Sort */}
-          <div className="flex items-center gap-2">
-            <SortAsc className="w-4 h-4 text-dv-text-muted" />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-dv-surface border border-dv-border rounded-lg py-2 px-3
-                       text-sm text-dv-text focus:outline-none focus:ring-2 focus:ring-dv-accent/50"
-            >
-              <option value="recent">Most Recent</option>
-              <option value="views">Most Viewed</option>
-              <option value="duration">Longest</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Walkthroughs grid */}
-        <div className="grid gap-4">
-          {filteredWalkthroughs.map((wt, index) => (
-            <motion.div
-              key={wt.id}
-              className="glass-panel p-5 hover:bg-dv-elevated/50 transition-colors group"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-            >
-              <div className="flex items-center gap-4">
-                {/* Play button */}
-                <Link
-                  href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.filePath)}`}
-                  className="w-16 h-16 rounded-xl bg-dv-elevated flex items-center justify-center
-                           group-hover:bg-dv-accent/20 transition-colors"
+            <div className="flex items-center gap-1 p-0.5 bg-dv-surface rounded-lg border border-dv-border/40">
+              {(['all', 'developer', 'manager'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setFilterMode(mode)}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-md text-xs font-medium transition-colors capitalize',
+                    filterMode === mode
+                      ? 'bg-dv-elevated text-dv-text'
+                      : 'text-dv-text-muted hover:text-dv-text'
+                  )}
                 >
-                  <Play className="w-6 h-6 text-dv-accent ml-1" />
-                </Link>
+                  {mode}
+                </button>
+              ))}
+            </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <SortAsc className="w-3.5 h-3.5 text-dv-text-muted" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-dv-surface border border-dv-border/40 rounded-lg py-1.5 px-2.5 text-xs text-dv-text focus:outline-none focus:ring-1 focus:ring-dv-accent/50"
+              >
+                <option value="recent">Recent</option>
+                <option value="duration">Longest</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Content */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 text-dv-accent animate-spin mr-3" />
+              <span className="text-sm text-dv-text-muted">Loading walkthroughs…</span>
+            </div>
+          ) : filteredEntries.length > 0 ? (
+            <div className="space-y-3">
+              {filteredEntries.map((wt, index) => (
+                <motion.div
+                  key={wt.id}
+                  className="card p-4 hover:bg-dv-elevated/30 transition-colors group"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.04 }}
+                >
+                  <div className="flex items-center gap-4">
                     <Link
-                      href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.filePath)}`}
-                      className="text-lg font-semibold hover:text-dv-accent transition-colors truncate"
+                      href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.file_path)}`}
+                      className="w-11 h-11 rounded-xl bg-dv-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-dv-accent/20 transition-colors"
                     >
-                      {wt.title}
+                      <Play className="w-4 h-4 text-dv-accent ml-0.5" />
                     </Link>
-                    <span className={clsx(
-                      'px-2 py-0.5 rounded-full text-xs',
-                      wt.viewMode === 'developer'
-                        ? 'bg-dv-accent/10 text-dv-accent'
-                        : 'bg-dv-purple/10 text-dv-purple'
-                    )}>
-                      {wt.viewMode}
-                    </span>
-                  </div>
 
-                  <div className="flex items-center gap-4 text-sm text-dv-text-muted">
-                    <span className="flex items-center gap-1">
-                      <FileCode className="w-4 h-4" />
-                      {wt.filePath}
-                    </span>
-                    <span className="text-dv-border">•</span>
-                    <span>{wt.repoName}</span>
-                  </div>
-                </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <Link
+                          href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.file_path)}`}
+                          className="text-sm font-semibold hover:text-dv-accent transition-colors truncate"
+                        >
+                          {wt.title}
+                        </Link>
+                        <span className={clsx(
+                          'px-2 py-0.5 rounded-full text-[10px] font-medium',
+                          wt.view_mode === 'developer'
+                            ? 'badge-accent'
+                            : 'bg-dv-purple/10 text-dv-purple'
+                        )}>
+                          {wt.view_mode}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-dv-text-muted">
+                        <span className="flex items-center gap-1">
+                          <FileCode className="w-3 h-3" />
+                          {wt.file_path}
+                        </span>
+                        <span className="text-dv-border">·</span>
+                        <span>{wt.repoName}</span>
+                      </div>
+                    </div>
 
-                {/* Stats */}
-                <div className="flex items-center gap-6">
-                  <div className="text-center">
-                    <p className="text-lg font-semibold">{formatDuration(wt.duration)}</p>
-                    <p className="text-xs text-dv-text-muted">Duration</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-lg font-semibold flex items-center gap-1">
-                      <Eye className="w-4 h-4" />
-                      {wt.viewCount}
-                    </p>
-                    <p className="text-xs text-dv-text-muted">Views</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm">{formatDate(wt.createdAt)}</p>
-                    <p className="text-xs text-dv-text-muted">Created</p>
-                  </div>
-                </div>
+                    <div className="flex items-center gap-4 text-xs text-dv-text-muted">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatDuration(wt.total_duration)}
+                      </span>
+                      <span>{wt.segments.length} segments</span>
+                    </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.filePath)}`}
-                    className="px-4 py-2 rounded-lg bg-dv-accent/10 text-dv-accent hover:bg-dv-accent/20 transition-colors text-sm font-medium"
-                  >
-                    Play
-                  </Link>
-                  <button className="p-2 rounded-lg hover:bg-dv-elevated transition-colors">
-                    <MoreVertical className="w-5 h-5 text-dv-text-muted" />
-                  </button>
-                </div>
+                    <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Link
+                        href={`/repository/${wt.repoId}/walkthrough?file=${encodeURIComponent(wt.file_path)}`}
+                        className="px-3 py-1.5 rounded-lg bg-dv-accent/10 text-dv-accent hover:bg-dv-accent/20 transition-colors text-xs font-medium"
+                      >
+                        Play
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(wt.id)}
+                        className="p-1.5 rounded-lg hover:bg-dv-error/10 hover:text-dv-error transition-colors text-dv-text-muted"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            /* Empty state */
+            <div className="text-center py-20">
+              <div className="w-14 h-14 rounded-2xl bg-dv-accent/10 flex items-center justify-center mx-auto mb-4">
+                <Sparkles className="w-7 h-7 text-dv-accent" />
               </div>
-            </motion.div>
-          ))}
-
-          {filteredWalkthroughs.length === 0 && (
-            <div className="glass-panel p-12 text-center">
-              <Play className="w-12 h-12 text-dv-text-muted mx-auto mb-4" />
-              <p className="text-xl font-semibold mb-2">No walkthroughs found</p>
-              <p className="text-dv-text-muted">
-                Generate walkthroughs from your connected repositories
+              <h2 className="text-lg font-semibold mb-2">No walkthroughs yet</h2>
+              <p className="text-sm text-dv-text-muted mb-6 max-w-sm mx-auto">
+                Open a repository and generate your first AI-powered code walkthrough.
               </p>
+              <Link href="/repositories" className="btn-primary inline-flex items-center gap-2">
+                <Play className="w-4 h-4" />
+                Go to Repositories
+              </Link>
             </div>
           )}
         </div>

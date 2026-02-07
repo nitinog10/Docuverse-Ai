@@ -5,77 +5,50 @@ import { motion } from 'framer-motion'
 import { 
   RefreshCw, 
   Download, 
-  Maximize2,
-  GitBranch,
   Layers,
-  ArrowRight,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { diagrams } from '@/lib/api'
+import toast from 'react-hot-toast'
 
 interface DiagramPanelProps {
+  repositoryId: string
   filePath: string
 }
 
-type DiagramType = 'flowchart' | 'class' | 'sequence'
+type DiagramType = 'flowchart' | 'classDiagram' | 'sequenceDiagram'
 
-// Mock Mermaid diagrams
-const mockDiagrams: Record<DiagramType, string> = {
-  flowchart: `flowchart TD
-    A[authenticate_user] --> B{User exists?}
-    B -->|Yes| C[verify_password]
-    B -->|No| D[Return None]
-    C -->|Valid| E[Return User]
-    C -->|Invalid| D
-    
-    style A fill:#58a6ff,color:#fff
-    style E fill:#3fb950,color:#fff
-    style D fill:#f85149,color:#fff`,
-  
-  class: `classDiagram
-    class User {
-        +str email
-        +str hashed_password
-        +datetime created_at
-        +verify_password()
-    }
-    
-    class TokenData {
-        +str email
-        +datetime exp
-    }
-    
-    class AuthService {
-        +create_access_token()
-        +authenticate_user()
-        +get_current_user()
-    }
-    
-    AuthService --> User
-    AuthService --> TokenData`,
-  
-  sequence: `sequenceDiagram
-    participant Client
-    participant API
-    participant AuthService
-    participant Database
-    
-    Client->>API: POST /login
-    API->>AuthService: authenticate_user()
-    AuthService->>Database: get_user_by_email()
-    Database-->>AuthService: User
-    AuthService->>AuthService: verify_password()
-    AuthService-->>API: User or None
-    API->>AuthService: create_access_token()
-    AuthService-->>API: JWT Token
-    API-->>Client: 200 OK + Token`,
+const DIAGRAM_LABELS: Record<DiagramType, string> = {
+  flowchart: 'Flow',
+  classDiagram: 'Class',
+  sequenceDiagram: 'Sequence',
 }
 
-export function DiagramPanel({ filePath }: DiagramPanelProps) {
+export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
   const [diagramType, setDiagramType] = useState<DiagramType>('flowchart')
+  const [mermaidCode, setMermaidCode] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const renderCountRef = useRef(0)
 
+  const generateDiagram = async () => {
+    if (!filePath) return
+    setIsLoading(true)
+    setError(null)
+    try {
+      const result = await diagrams.generate(repositoryId, diagramType, filePath)
+      setMermaidCode(result.mermaid_code)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate diagram')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Re-generate when type or file changes
   useEffect(() => {
     renderDiagram()
     
@@ -87,7 +60,13 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
     }
   }, [diagramType])
 
-  const renderDiagram = async () => {
+  // Render mermaid when code changes
+  useEffect(() => {
+    if (!mermaidCode || !containerRef.current) return
+    renderMermaid(mermaidCode)
+  }, [mermaidCode])
+
+  const renderMermaid = async (code: string) => {
     if (!containerRef.current) return
     
     setIsLoading(true)
@@ -96,25 +75,23 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
     containerRef.current.innerHTML = ''
     
     try {
-      // Dynamic import of mermaid
       const mermaid = (await import('mermaid')).default
-      
       mermaid.initialize({
         startOnLoad: false,
         theme: 'dark',
         themeVariables: {
-          primaryColor: '#58a6ff',
-          primaryTextColor: '#c9d1d9',
-          primaryBorderColor: '#30363d',
-          lineColor: '#8b949e',
-          secondaryColor: '#21262d',
-          tertiaryColor: '#161b22',
-          background: '#0d1117',
-          mainBkg: '#161b22',
-          nodeBorder: '#30363d',
-          clusterBkg: '#21262d',
-          titleColor: '#c9d1d9',
-          edgeLabelBackground: '#21262d',
+          primaryColor: '#6366f1',
+          primaryTextColor: '#e4e4e7',
+          primaryBorderColor: '#27272a',
+          lineColor: '#52525b',
+          secondaryColor: '#18181b',
+          tertiaryColor: '#0f0f11',
+          background: '#09090b',
+          mainBkg: '#18181b',
+          nodeBorder: '#27272a',
+          clusterBkg: '#18181b',
+          titleColor: '#e4e4e7',
+          edgeLabelBackground: '#18181b',
         },
       })
 
@@ -144,65 +121,58 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
 
   const handleDownload = () => {
     if (!containerRef.current) return
-    
     const svg = containerRef.current.querySelector('svg')
     if (!svg) return
-    
     const svgData = new XMLSerializer().serializeToString(svg)
     const blob = new Blob([svgData], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
-    
     const a = document.createElement('a')
     a.href = url
     a.download = `diagram-${diagramType}.svg`
     a.click()
-    
     URL.revokeObjectURL(url)
   }
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b border-dv-border">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-medium flex items-center gap-2">
+      <div className="p-4 border-b border-dv-border/30">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Layers className="w-4 h-4 text-dv-purple" />
             Diagrams
           </h3>
           <div className="flex items-center gap-1">
             <button
-              onClick={renderDiagram}
-              className="p-2 rounded-lg hover:bg-dv-elevated transition-colors"
+              onClick={generateDiagram}
+              className="p-1.5 rounded-lg hover:bg-dv-elevated transition-colors"
               disabled={isLoading}
             >
-              <RefreshCw className={clsx(
-                'w-4 h-4 text-dv-text-muted',
-                isLoading && 'animate-spin'
-              )} />
+              <RefreshCw className={clsx('w-3.5 h-3.5 text-dv-text-muted', isLoading && 'animate-spin')} />
             </button>
             <button
               onClick={handleDownload}
-              className="p-2 rounded-lg hover:bg-dv-elevated transition-colors"
+              className="p-1.5 rounded-lg hover:bg-dv-elevated transition-colors"
             >
-              <Download className="w-4 h-4 text-dv-text-muted" />
+              <Download className="w-3.5 h-3.5 text-dv-text-muted" />
             </button>
           </div>
         </div>
 
         {/* Diagram type selector */}
         <div className="flex gap-1 p-1 bg-dv-bg rounded-lg">
-          {(['flowchart', 'class', 'sequence'] as DiagramType[]).map((type) => (
+          {(Object.keys(DIAGRAM_LABELS) as DiagramType[]).map((type) => (
             <button
               key={type}
               onClick={() => setDiagramType(type)}
               className={clsx(
-                'flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors capitalize',
+                'flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors',
                 diagramType === type
                   ? 'bg-dv-elevated text-dv-text'
                   : 'text-dv-text-muted hover:text-dv-text'
               )}
             >
-              {type}
+              {DIAGRAM_LABELS[type]}
             </button>
           ))}
         </div>
@@ -225,9 +195,9 @@ export function DiagramPanel({ filePath }: DiagramPanelProps) {
       </div>
 
       {/* Info */}
-      <div className="p-4 border-t border-dv-border">
-        <p className="text-xs text-dv-text-muted">
-          Diagrams are auto-generated from code analysis using Mermaid.js
+      <div className="p-3 border-t border-dv-border/30">
+        <p className="text-[10px] text-dv-text-muted">
+          AI-generated from code analysis · Mermaid.js
         </p>
       </div>
     </div>
