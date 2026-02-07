@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { WalkthroughPlayer } from '@/components/walkthrough/WalkthroughPlayer'
 import { FileExplorer } from '@/components/walkthrough/FileExplorer'
@@ -9,252 +9,178 @@ import { SandboxPanel } from '@/components/walkthrough/SandboxPanel'
 import {
   ArrowLeft,
   Layers,
-  Code2,
   FileCode,
   GitBranch,
   Terminal,
-  LayoutGrid,
+  Loader2,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { clsx } from 'clsx'
-
-// Mock file tree data
-const mockFileTree = [
-  {
-    id: 'src',
-    path: 'src',
-    name: 'src',
-    isDirectory: true,
-    children: [
-      {
-        id: 'src_auth',
-        path: 'src/auth',
-        name: 'auth',
-        isDirectory: true,
-        children: [
-          { id: 'auth_flow', path: 'src/auth/auth_flow.py', name: 'auth_flow.py', isDirectory: false, language: 'python' },
-          { id: 'jwt_handler', path: 'src/auth/jwt_handler.py', name: 'jwt_handler.py', isDirectory: false, language: 'python' },
-          { id: 'oauth', path: 'src/auth/oauth.py', name: 'oauth.py', isDirectory: false, language: 'python' },
-        ],
-      },
-      {
-        id: 'src_api',
-        path: 'src/api',
-        name: 'api',
-        isDirectory: true,
-        children: [
-          { id: 'routes', path: 'src/api/routes.py', name: 'routes.py', isDirectory: false, language: 'python' },
-          { id: 'middleware', path: 'src/api/middleware.py', name: 'middleware.py', isDirectory: false, language: 'python' },
-        ],
-      },
-      { id: 'main', path: 'src/main.py', name: 'main.py', isDirectory: false, language: 'python' },
-      { id: 'config', path: 'src/config.py', name: 'config.py', isDirectory: false, language: 'python' },
-    ],
-  },
-  {
-    id: 'tests',
-    path: 'tests',
-    name: 'tests',
-    isDirectory: true,
-    children: [
-      { id: 'test_auth', path: 'tests/test_auth.py', name: 'test_auth.py', isDirectory: false, language: 'python' },
-    ],
-  },
-]
-
-// Mock code content
-const mockCodeContent = `"""
-Authentication Flow Module
-Handles user authentication via JWT tokens
-"""
-
-from datetime import datetime, timedelta
-from typing import Optional
-from jose import jwt, JWTError
-from passlib.context import CryptContext
-from .models import User, TokenData
-from .database import get_user_by_email
-
-# Security configuration
-SECRET_KEY = "your-secret-key-here"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Generate password hash using bcrypt."""
-    return pwd_context.hash(password)
-
-
-def create_access_token(
-    data: dict, 
-    expires_delta: Optional[timedelta] = None
-) -> str:
-    """
-    Create a JWT access token.
-    
-    Args:
-        data: Payload data to encode
-        expires_delta: Token expiration time
-        
-    Returns:
-        Encoded JWT token string
-    """
-    to_encode = data.copy()
-    
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    
-    return encoded_jwt
-
-
-async def authenticate_user(email: str, password: str) -> Optional[User]:
-    """
-    Authenticate a user with email and password.
-    
-    This function retrieves the user from the database,
-    verifies the password, and returns the user if valid.
-    """
-    user = await get_user_by_email(email)
-    
-    if not user:
-        return None
-    
-    if not verify_password(password, user.hashed_password):
-        return None
-    
-    return user
-
-
-async def get_current_user(token: str) -> User:
-    """
-    Decode JWT token and return the current user.
-    
-    Raises:
-        InvalidCredentials: If token is invalid or expired
-    """
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        
-        if email is None:
-            raise InvalidCredentials()
-            
-        token_data = TokenData(email=email)
-        
-    except JWTError:
-        raise InvalidCredentials()
-    
-    user = await get_user_by_email(token_data.email)
-    
-    if user is None:
-        raise InvalidCredentials()
-    
-    return user
-`
-
-// Mock walkthrough script
-const mockWalkthroughScript = {
-  id: 'wt_demo',
-  filePath: 'src/auth/auth_flow.py',
-  title: 'Authentication Flow Walkthrough',
-  summary: 'Complete walkthrough of the authentication system including JWT tokens and password hashing.',
-  totalDuration: 245, // seconds
-  segments: [
-    {
-      id: 'seg_1',
-      order: 0,
-      text: "Welcome to the walkthrough of auth_flow.py. This file is the heart of our authentication system. It handles everything from password hashing to JWT token management. Let's explore how it all works together.",
-      startLine: 1,
-      endLine: 11,
-      highlightLines: [1, 2, 3, 4, 5, 6, 7, 8],
-      durationEstimate: 18,
-    },
-    {
-      id: 'seg_2',
-      order: 1,
-      text: "Here we have our security configuration. The SECRET_KEY should be kept secure and stored in environment variables in production. We're using the HS256 algorithm for JWT signing, which provides a good balance of security and performance.",
-      startLine: 12,
-      endLine: 18,
-      highlightLines: [12, 13, 14, 15, 16, 17, 18],
-      durationEstimate: 20,
-    },
-    {
-      id: 'seg_3',
-      order: 2,
-      text: "The verify_password function uses bcrypt through Passlib's CryptContext. Bcrypt is a proven password hashing algorithm that automatically handles salting and is resistant to rainbow table attacks.",
-      startLine: 21,
-      endLine: 24,
-      highlightLines: [21, 22, 23, 24],
-      durationEstimate: 18,
-    },
-    {
-      id: 'seg_4',
-      order: 3,
-      text: "The create_access_token function is where JWT magic happens. It takes the user data, adds an expiration timestamp, and encodes it all into a secure token. Notice how we handle both custom and default expiration times.",
-      startLine: 31,
-      endLine: 50,
-      highlightLines: [31, 32, 33, 34, 35, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-      durationEstimate: 25,
-    },
-    {
-      id: 'seg_5',
-      order: 4,
-      text: "The authenticate_user function ties it all together. It fetches the user from the database, verifies the password, and returns the user object if everything checks out. This is the main entry point for login operations.",
-      startLine: 53,
-      endLine: 68,
-      highlightLines: [53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68],
-      durationEstimate: 22,
-    },
-    {
-      id: 'seg_6',
-      order: 5,
-      text: "Finally, get_current_user decodes the JWT token to retrieve the authenticated user. It handles all the error cases gracefully, raising InvalidCredentials when the token is expired, malformed, or the user doesn't exist.",
-      startLine: 71,
-      endLine: 92,
-      highlightLines: [71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92],
-      durationEstimate: 24,
-    },
-  ],
-}
+import { files, walkthroughs, repositories, FileNode, WalkthroughScript, Repository } from '@/lib/api'
+import toast from 'react-hot-toast'
 
 type PanelType = 'files' | 'diagram' | 'sandbox'
 
+/** Adapt API FileNode shape (is_directory) to component shape (isDirectory) */
+function adaptFileTree(nodes: FileNode[]): any[] {
+  return nodes.map((n) => ({
+    id: n.id || n.path,
+    path: n.path,
+    name: n.name,
+    isDirectory: n.is_directory,
+    language: n.language ?? undefined,
+    children: n.children ? adaptFileTree(n.children) : undefined,
+  }))
+}
+
 export default function WalkthroughPage({ params }: { params: { id: string } }) {
-  const [selectedFile, setSelectedFile] = useState('src/auth/auth_flow.py')
+  const searchParams = useSearchParams()
+  const fileFromQuery = searchParams.get('file')
+
+  const [repo, setRepo] = useState<Repository | null>(null)
+  const [fileTree, setFileTree] = useState<any[]>([])
+  const [selectedFile, setSelectedFile] = useState<string>(fileFromQuery || '')
+  const [codeContent, setCodeContent] = useState<string>('')
+  const [script, setScript] = useState<WalkthroughScript | null>(null)
   const [activePanel, setActivePanel] = useState<PanelType>('files')
   const [isPlaying, setIsPlaying] = useState(false)
+
+  // Loading states
+  const [isLoadingTree, setIsLoadingTree] = useState(true)
+  const [isLoadingCode, setIsLoadingCode] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch repo & file tree on mount
+  useEffect(() => {
+    async function load() {
+      setIsLoadingTree(true)
+      try {
+        const [repoData, tree] = await Promise.all([
+          repositories.get(params.id),
+          files.getTree(params.id),
+        ])
+        setRepo(repoData)
+        setFileTree(adaptFileTree(tree))
+
+        // Auto-select first non-directory file if none selected
+        if (!fileFromQuery) {
+          const first = findFirstFile(tree)
+          if (first) setSelectedFile(first.path)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load repository')
+      } finally {
+        setIsLoadingTree(false)
+      }
+    }
+    load()
+  }, [params.id, fileFromQuery])
+
+  // Fetch code when selected file changes
+  useEffect(() => {
+    if (!selectedFile) return
+    let cancelled = false
+
+    async function loadCode() {
+      setIsLoadingCode(true)
+      setScript(null)
+      try {
+        const content = await files.getContent(params.id, selectedFile)
+        if (!cancelled) setCodeContent(content)
+      } catch {
+        if (!cancelled) setCodeContent('// Failed to load file content')
+      } finally {
+        if (!cancelled) setIsLoadingCode(false)
+      }
+    }
+    loadCode()
+    return () => { cancelled = true }
+  }, [selectedFile, params.id])
+
+  const handleGenerate = useCallback(async () => {
+    if (!selectedFile) return
+    setIsGenerating(true)
+    setIsPlaying(false)
+    try {
+      const result = await walkthroughs.generate(params.id, selectedFile, 'developer')
+      // Adapt snake_case from API to camelCase for WalkthroughPlayer
+      setScript({
+        ...result,
+        segments: result.segments.map((seg) => ({
+          ...seg,
+        })),
+      })
+      toast.success('Walkthrough generated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate walkthrough')
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [selectedFile, params.id])
+
+  // Map WalkthroughScript (snake_case) to the camelCase shape WalkthroughPlayer expects
+  const playerScript = script
+    ? {
+        id: script.id,
+        filePath: script.file_path,
+        title: script.title,
+        summary: script.summary,
+        totalDuration: script.total_duration,
+        segments: script.segments.map((s) => ({
+          id: s.id,
+          order: s.order,
+          text: s.text,
+          startLine: s.start_line,
+          endLine: s.end_line,
+          highlightLines: s.highlight_lines,
+          durationEstimate: s.duration_estimate,
+        })),
+      }
+    : null
+
+  // Loading state
+  if (isLoadingTree) {
+    return (
+      <div className="h-screen bg-dv-bg flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-dv-accent animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="h-screen bg-dv-bg flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-8 h-8 text-dv-error mx-auto mb-3" />
+          <p className="text-sm text-dv-error mb-4">{error}</p>
+          <Link href={`/repository/${params.id}`} className="btn-secondary">Back to Repository</Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen bg-dv-bg flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-dv-border bg-dv-surface">
+      <header className="flex items-center justify-between px-6 h-14 border-b border-dv-border/30 bg-dv-bg/80 backdrop-blur-lg flex-shrink-0">
         <div className="flex items-center gap-4">
           <Link
-            href="/dashboard"
-            className="p-2 rounded-lg hover:bg-dv-elevated transition-colors"
+            href={`/repository/${params.id}`}
+            className="p-1.5 rounded-lg hover:bg-dv-elevated transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 text-dv-text-muted" />
+            <ArrowLeft className="w-4 h-4 text-dv-text-muted" />
           </Link>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-dv-accent/20 flex items-center justify-center">
-              <GitBranch className="w-4 h-4 text-dv-accent" />
+            <div className="w-7 h-7 rounded-lg bg-dv-accent/10 flex items-center justify-center">
+              <GitBranch className="w-3.5 h-3.5 text-dv-accent" />
             </div>
             <div>
-              <h1 className="font-semibold">docuverse-core</h1>
-              <p className="text-sm text-dv-text-muted">{selectedFile}</p>
+              <h1 className="text-sm font-medium">{repo?.name || 'Repository'}</h1>
+              <p className="text-xs text-dv-text-muted truncate max-w-[200px]">{selectedFile || 'Select a file'}</p>
             </div>
           </div>
         </div>
@@ -263,19 +189,19 @@ export default function WalkthroughPage({ params }: { params: { id: string } }) 
           <PanelButton
             active={activePanel === 'files'}
             onClick={() => setActivePanel('files')}
-            icon={<FileCode className="w-4 h-4" />}
+            icon={<FileCode className="w-3.5 h-3.5" />}
             label="Files"
           />
           <PanelButton
             active={activePanel === 'diagram'}
             onClick={() => setActivePanel('diagram')}
-            icon={<Layers className="w-4 h-4" />}
+            icon={<Layers className="w-3.5 h-3.5" />}
             label="Diagram"
           />
           <PanelButton
             active={activePanel === 'sandbox'}
             onClick={() => setActivePanel('sandbox')}
-            icon={<Terminal className="w-4 h-4" />}
+            icon={<Terminal className="w-3.5 h-3.5" />}
             label="Sandbox"
           />
         </div>
@@ -285,34 +211,75 @@ export default function WalkthroughPage({ params }: { params: { id: string } }) 
       <div className="flex-1 flex overflow-hidden">
         {/* Side panel */}
         <motion.div
-          className="w-80 border-r border-dv-border bg-dv-surface overflow-hidden"
+          className="w-72 border-r border-dv-border/30 bg-dv-surface overflow-hidden flex-shrink-0"
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
         >
           {activePanel === 'files' && (
             <FileExplorer
-              files={mockFileTree}
+              files={fileTree}
               selectedFile={selectedFile}
               onSelectFile={setSelectedFile}
             />
           )}
           {activePanel === 'diagram' && (
-            <DiagramPanel filePath={selectedFile} />
+            <DiagramPanel repositoryId={params.id} filePath={selectedFile} />
           )}
           {activePanel === 'sandbox' && (
             <SandboxPanel />
           )}
         </motion.div>
 
-        {/* Walkthrough player */}
-        <div className="flex-1 overflow-hidden">
-          <WalkthroughPlayer
-            code={mockCodeContent}
-            script={mockWalkthroughScript}
-            filePath={selectedFile}
-            isPlaying={isPlaying}
-            onPlayingChange={setIsPlaying}
-          />
+        {/* Walkthrough player or generate prompt */}
+        <div className="flex-1 overflow-hidden relative">
+          {isLoadingCode ? (
+            <div className="h-full flex items-center justify-center">
+              <Loader2 className="w-5 h-5 text-dv-accent animate-spin mr-3" />
+              <span className="text-sm text-dv-text-muted">Loading file…</span>
+            </div>
+          ) : !playerScript ? (
+            /* No walkthrough yet — show generate prompt */
+            <div className="h-full flex flex-col items-center justify-center px-8">
+              <div className="w-14 h-14 rounded-2xl bg-dv-accent/10 flex items-center justify-center mb-4">
+                <Sparkles className="w-7 h-7 text-dv-accent" />
+              </div>
+              <h2 className="text-lg font-semibold mb-2">Generate a Walkthrough</h2>
+              <p className="text-sm text-dv-text-muted text-center max-w-md mb-6">
+                AI will analyze <span className="text-dv-text font-medium">{selectedFile.split('/').pop()}</span> and create
+                a narrated, step-by-step code walkthrough with voice.
+              </p>
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating || !selectedFile}
+                className="btn-primary flex items-center gap-2 disabled:opacity-50"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate Walkthrough
+                  </>
+                )}
+              </button>
+              {codeContent && (
+                <p className="text-xs text-dv-text-muted mt-4">
+                  {codeContent.split('\n').length} lines · {selectedFile.split('.').pop()?.toUpperCase()}
+                </p>
+              )}
+            </div>
+          ) : (
+            <WalkthroughPlayer
+              code={codeContent}
+              script={playerScript}
+              filePath={selectedFile}
+              isPlaying={isPlaying}
+              onPlayingChange={setIsPlaying}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -334,15 +301,27 @@ function PanelButton({
     <button
       onClick={onClick}
       className={clsx(
-        'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+        'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm',
         active
           ? 'bg-dv-accent/10 text-dv-accent'
           : 'text-dv-text-muted hover:bg-dv-elevated hover:text-dv-text'
       )}
     >
       {icon}
-      <span className="text-sm font-medium">{label}</span>
+      <span className="font-medium">{label}</span>
     </button>
   )
+}
+
+/** Walk the tree and return the first non-directory node */
+function findFirstFile(nodes: FileNode[]): FileNode | null {
+  for (const n of nodes) {
+    if (!n.is_directory) return n
+    if (n.children?.length) {
+      const found = findFirstFile(n.children)
+      if (found) return found
+    }
+  }
+  return null
 }
 

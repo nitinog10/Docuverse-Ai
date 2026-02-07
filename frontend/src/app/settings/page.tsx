@@ -9,7 +9,6 @@ import {
   Volume2,
   Shield,
   CreditCard,
-  HelpCircle,
   LogOut,
   ChevronRight,
   Moon,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { clsx } from 'clsx'
+import { useUserStore } from '@/lib/store'
 
 const voiceOptions = [
   { id: 'rachel', name: 'Rachel', description: 'Default female voice' },
@@ -28,6 +28,7 @@ const voiceOptions = [
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('account')
+  const user = useUserStore((s) => s.user)
   const [settings, setSettings] = useState({
     theme: 'dark',
     voice: 'rachel',
@@ -66,7 +67,7 @@ export default function SettingsPage() {
         <div className="flex gap-8">
           {/* Sidebar navigation */}
           <div className="w-64 flex-shrink-0">
-            <div className="glass-panel p-2">
+            <div className="card p-2">
               {sections.map((section) => {
                 const Icon = section.icon
                 return (
@@ -102,17 +103,20 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-4">Profile</h2>
                   
                   <div className="flex items-center gap-4 mb-6">
-                    <div className="w-20 h-20 rounded-full bg-dv-accent/20 flex items-center justify-center">
-                      <User className="w-10 h-10 text-dv-accent" />
+                    <div className="w-20 h-20 rounded-full bg-dv-accent/20 flex items-center justify-center overflow-hidden">
+                      {user?.avatar_url ? (
+                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-10 h-10 text-dv-accent" />
+                      )}
                     </div>
                     <div>
-                      <button className="btn-secondary text-sm">
-                        Change Avatar
-                      </button>
+                      <p className="font-medium">{user?.username || 'User'}</p>
+                      <p className="text-sm text-dv-text-muted">{user?.email || 'No email'}</p>
                     </div>
                   </div>
 
@@ -121,18 +125,16 @@ export default function SettingsPage() {
                       <label className="block text-sm text-dv-text-muted mb-2">Username</label>
                       <input
                         type="text"
-                        defaultValue="developer"
-                        className="w-full bg-dv-bg border border-dv-border rounded-lg py-2 px-4
-                                 text-dv-text focus:outline-none focus:ring-2 focus:ring-dv-accent/50"
+                        defaultValue={user?.username || ''}
+                        className="input-field w-full"
                       />
                     </div>
                     <div>
                       <label className="block text-sm text-dv-text-muted mb-2">Email</label>
                       <input
                         type="email"
-                        defaultValue="developer@example.com"
-                        className="w-full bg-dv-bg border border-dv-border rounded-lg py-2 px-4
-                                 text-dv-text focus:outline-none focus:ring-2 focus:ring-dv-accent/50"
+                        defaultValue={user?.email || ''}
+                        className="input-field w-full"
                       />
                     </div>
                   </div>
@@ -140,7 +142,7 @@ export default function SettingsPage() {
                   <button className="btn-primary mt-6">Save Changes</button>
                 </div>
 
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-4">Connected Accounts</h2>
                   
                   <div className="flex items-center justify-between p-4 rounded-lg bg-dv-bg">
@@ -152,7 +154,7 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <p className="font-medium">GitHub</p>
-                        <p className="text-sm text-dv-text-muted">@developer</p>
+                        <p className="text-sm text-dv-text-muted">@{user?.username || 'user'}</p>
                       </div>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-dv-success/10 text-dv-success text-sm">
@@ -168,7 +170,7 @@ export default function SettingsPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-panel p-6"
+                className="card p-6"
               >
                 <h2 className="text-xl font-semibold mb-6">Appearance</h2>
 
@@ -213,7 +215,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-6">Voice Selection</h2>
                   
                   <div className="grid grid-cols-2 gap-3">
@@ -240,7 +242,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-6">Playback Settings</h2>
                   
                   <div className="space-y-6">
@@ -283,7 +285,7 @@ export default function SettingsPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-panel p-6"
+                className="card p-6"
               >
                 <h2 className="text-xl font-semibold mb-6">Notifications</h2>
                 
@@ -317,7 +319,7 @@ export default function SettingsPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-panel p-6"
+                className="card p-6"
               >
                 <h2 className="text-xl font-semibold mb-6">Security</h2>
                 
@@ -356,7 +358,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-4">Current Plan</h2>
                   
                   <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-dv-accent/20 to-dv-purple/20 border border-dv-accent/30">
@@ -370,7 +372,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="glass-panel p-6">
+                <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-4">Usage</h2>
                   
                   <div className="space-y-4">

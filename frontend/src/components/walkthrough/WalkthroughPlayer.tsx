@@ -262,9 +262,9 @@ export function WalkthroughPlayer({
               initial={false}
               animate={{
                 backgroundColor: isHighlighted 
-                  ? 'rgba(88, 166, 255, 0.15)' 
+                  ? 'rgba(99, 102, 241, 0.15)' 
                   : isInRange 
-                    ? 'rgba(88, 166, 255, 0.05)' 
+                    ? 'rgba(99, 102, 241, 0.05)' 
                     : 'transparent',
               }}
             >
