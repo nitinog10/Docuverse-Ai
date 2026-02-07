@@ -14,20 +14,22 @@ from jose import jwt
 
 from app.config import get_settings
 from app.models.schemas import User, UserResponse, APIResponse
+from app.services.persistence import save_users, load_users
 
 router = APIRouter()
 settings = get_settings()
 
-# In-memory user store (replace with database in production)
-users_db: dict[str, User] = {}
+# Load users from persistence on startup
+users_db: dict[str, User] = load_users()
 sessions_db: dict[str, str] = {}  # session_token -> user_id
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token with user info embedded"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=7))
-    to_encode.update({"exp": expire})
+    # Default to 30 days for better session persistence
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=30))
+    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
     return jwt.encode(to_encode, settings.secret_key, algorithm="HS256")
 
 
@@ -40,17 +42,40 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 
 async def get_current_user(authorization: str = None) -> Optional[User]:
-    """Get current authenticated user"""
-    if not authorization or not authorization.startswith("Bearer "):
+    """Get current authenticated user from JWT token"""
+    if not authorization:
         return None
     
-    token = authorization.replace("Bearer ", "")
+    # Handle both "Bearer token" and just "token" formats
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
     payload = decode_access_token(token)
     
     if not payload or "user_id" not in payload:
         return None
     
-    return users_db.get(payload["user_id"])
+    user_id = payload["user_id"]
+    
+    # First try to get from in-memory store
+    user = users_db.get(user_id)
+    
+    # If not in memory but token is valid, reconstruct user from token payload
+    if not user and payload.get("user_data"):
+        user_data = payload["user_data"]
+        user = User(
+            id=user_id,
+            github_id=user_data.get("github_id"),
+            username=user_data.get("username"),
+            email=user_data.get("email"),
+            avatar_url=user_data.get("avatar_url"),
+            access_token=user_data.get("access_token", ""),
+        )
+        # Store back in memory for future requests
+        users_db[user_id] = user
+        # Save to persistence
+        save_users(users_db)
+    
+    return user
 
 
 @router.get("/github")
@@ -138,8 +163,20 @@ async def github_callback(code: str, state: str):
     
     users_db[user_id] = user
     
-    # Create session token
-    session_token = create_access_token({"user_id": user_id})
+    # Save to persistence
+    save_users(users_db)
+    
+    # Create session token with user data embedded
+    session_token = create_access_token({
+        "user_id": user_id,
+        "user_data": {
+            "github_id": github_user["id"],
+            "username": github_user["login"],
+            "email": primary_email,
+            "avatar_url": github_user.get("avatar_url"),
+            "access_token": access_token,
+        }
+    })
     
     # Redirect to frontend with token (302 is standard for OAuth)
     return RedirectResponse(
@@ -169,4 +206,54 @@ async def logout(authorization: Opt[str] = Header(None, alias="Authorization")):
     """Logout current user"""
     # In production, invalidate the token
     return APIResponse(success=True, message="Logged out successfully")
+
+
+@router.post("/refresh")
+async def refresh_token(authorization: Opt[str] = Header(None, alias="Authorization")):
+    """Refresh access token"""
+    user = await get_current_user(authorization)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Create new token with extended expiry and user data
+    new_token = create_access_token({
+        "user_id": user.id,
+        "user_data": {
+            "github_id": user.github_id,
+            "username": user.username,
+            "email": user.email,
+            "avatar_url": user.avatar_url,
+            "access_token": user.access_token,
+        }
+    })
+    
+    return {
+        "token": new_token,
+        "user": UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar_url=user.avatar_url
+        )
+    }
+
+
+@router.get("/verify")
+async def verify_token(authorization: Opt[str] = Header(None, alias="Authorization")):
+    """Verify if token is valid"""
+    user = await get_current_user(authorization)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {
+        "valid": True,
+        "user": UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar_url=user.avatar_url
+        )
+    }
 

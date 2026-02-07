@@ -11,6 +11,16 @@ export function useHydration() {
   useEffect(() => {
     useUserStore.persist.rehydrate()
     useUIStore.persist.rehydrate()
+    
+    // Also sync token from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token')
+      const currentToken = useUserStore.getState().token
+      
+      if (token && token !== currentToken) {
+        useUserStore.getState().setToken(token)
+      }
+    }
   }, [])
 }
 
@@ -36,7 +46,7 @@ interface UserState {
 
 export const useUserStore = create<UserState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -49,7 +59,7 @@ export const useUserStore = create<UserState>()(
             localStorage.removeItem('token')
           }
         }
-        set({ token })
+        set({ token, isAuthenticated: !!token })
       },
       logout: () => {
         if (typeof window !== 'undefined') {
@@ -60,8 +70,22 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: 'docuverse-user',
-      partialize: (state) => ({ token: state.token }),
+      partialize: (state) => ({ 
+        token: state.token,
+        user: state.user,
+        isAuthenticated: state.isAuthenticated 
+      }),
       skipHydration: true,
+      // Sync with localStorage on storage events
+      onRehydrateStorage: () => (state) => {
+        if (typeof window !== 'undefined' && state) {
+          const token = localStorage.getItem('token')
+          if (token && token !== state.token) {
+            state.token = token
+            state.isAuthenticated = true
+          }
+        }
+      },
     }
   )
 )
