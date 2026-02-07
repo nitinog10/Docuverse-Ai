@@ -97,6 +97,8 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.debug
+        reload=True,
+        reload_dirs=["app"],
+        reload_excludes=["repos", "chroma_db", "*.pyc"],
     )
 

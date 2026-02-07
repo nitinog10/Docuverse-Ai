@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Header
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Header, Depends
 from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
@@ -19,6 +19,7 @@ from app.models.schemas import (
     AudioSegment,
     ViewMode,
     APIResponse,
+    User,
 )
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.repositories import repositories_db
@@ -35,17 +36,12 @@ audio_walkthroughs_db: dict[str, AudioWalkthrough] = {}
 async def generate_walkthrough(
     request: WalkthroughRequest,
     background_tasks: BackgroundTasks,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Generate a walkthrough script for a file"""
     from app.services.script_generator import ScriptGeneratorService
     from app.services.parser import ParserService
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     repo = repositories_db.get(request.repository_id)
     
     if not repo or repo.user_id != user.id:
@@ -103,13 +99,8 @@ async def generate_walkthrough(
 
 
 @router.get("/{walkthrough_id}", response_model=WalkthroughScript)
-async def get_walkthrough(walkthrough_id: str, authorization: str = Header(None)):
+async def get_walkthrough(walkthrough_id: str, user: User = Depends(get_current_user)):
     """Get a walkthrough script by ID"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     walkthrough = walkthroughs_db.get(walkthrough_id)
     
     if not walkthrough:
@@ -119,13 +110,8 @@ async def get_walkthrough(walkthrough_id: str, authorization: str = Header(None)
 
 
 @router.get("/{walkthrough_id}/audio", response_model=AudioWalkthrough)
-async def get_walkthrough_audio(walkthrough_id: str, authorization: str = Header(None)):
+async def get_walkthrough_audio(walkthrough_id: str, user: User = Depends(get_current_user)):
     """Get audio data for a walkthrough"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     audio = audio_walkthroughs_db.get(walkthrough_id)
     
     if not audio:
@@ -135,15 +121,10 @@ async def get_walkthrough_audio(walkthrough_id: str, authorization: str = Header
 
 
 @router.get("/{walkthrough_id}/audio/stream")
-async def stream_walkthrough_audio(walkthrough_id: str, authorization: str = Header(None)):
+async def stream_walkthrough_audio(walkthrough_id: str, user: User = Depends(get_current_user)):
     """Stream audio for a walkthrough"""
     from app.services.audio_generator import AudioGeneratorService
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     walkthrough = walkthroughs_db.get(walkthrough_id)
     
     if not walkthrough:
@@ -169,14 +150,9 @@ async def stream_walkthrough_audio(walkthrough_id: str, authorization: str = Hea
 async def get_walkthroughs_for_file(
     repo_id: str,
     file_path: str,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ) -> List[WalkthroughScript]:
     """Get all walkthroughs for a specific file"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -192,13 +168,8 @@ async def get_walkthroughs_for_file(
 
 
 @router.delete("/{walkthrough_id}")
-async def delete_walkthrough(walkthrough_id: str, authorization: str = Header(None)):
+async def delete_walkthrough(walkthrough_id: str, user: User = Depends(get_current_user)):
     """Delete a walkthrough"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     if walkthrough_id not in walkthroughs_db:
         raise HTTPException(status_code=404, detail="Walkthrough not found")
     

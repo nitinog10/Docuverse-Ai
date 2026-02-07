@@ -4,11 +4,14 @@ Repository Management Endpoints
 
 import os
 import shutil
+import json
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 import uuid
+import fnmatch
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Header
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Header, Depends
 import httpx
 from git import Repo
 
@@ -19,6 +22,7 @@ from app.models.schemas import (
     RepositoryResponse,
     APIResponse,
     FileNode,
+    User,
 )
 from app.api.endpoints.auth import get_current_user, users_db
 
@@ -27,6 +31,8 @@ settings = get_settings()
 
 # In-memory repository store (replace with database in production)
 repositories_db: dict[str, Repository] = {}
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
 
 # Directories to ignore when indexing
 IGNORE_PATTERNS = {
@@ -50,6 +56,44 @@ IGNORE_PATTERNS = {
     "*.pyo",
     "*.egg-info",
 }
+
+
+def _save_repositories():
+    """Persist repositories to disk"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "repositories.json")
+    data = {}
+    for rid, repo in repositories_db.items():
+        data[rid] = repo.model_dump()
+        # Handle datetime serialization
+        for key in ["created_at", "indexed_at"]:
+            if data[rid].get(key):
+                data[rid][key] = data[rid][key].isoformat()
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+def _load_repositories():
+    """Load repositories from disk"""
+    filepath = os.path.join(DATA_DIR, "repositories.json")
+    if not os.path.exists(filepath):
+        return
+    try:
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        for rid, rdata in data.items():
+            repo = Repository(**rdata)
+            # Verify local_path still exists
+            if repo.local_path and not os.path.exists(repo.local_path):
+                repo.local_path = None
+                repo.status = "pending"
+            repositories_db[rid] = repo
+    except Exception:
+        pass
+
+
+# Load on module init
+_load_repositories()
 
 
 def should_ignore(path: str) -> bool:
@@ -93,34 +137,43 @@ async def clone_repository(repo: Repository, access_token: str):
     """Clone repository to local storage"""
     repos_dir = settings.repos_directory
     os.makedirs(repos_dir, exist_ok=True)
-    
+
     local_path = os.path.join(repos_dir, repo.id)
-    
-    # Remove existing directory if present
-    if os.path.exists(local_path):
-        shutil.rmtree(local_path)
-    
-    # Clone with token authentication
-    clone_url = repo.clone_url.replace(
-        "https://",
-        f"https://x-access-token:{access_token}@"
-    )
-    
-    Repo.clone_from(clone_url, local_path, depth=1)
-    
-    # Update repository record
-    repo.local_path = local_path
+
+    # Update status
+    repo.status = "cloning"
     repositories_db[repo.id] = repo
+    _save_repositories()
+
+    try:
+        # Remove existing directory if present
+        if os.path.exists(local_path):
+            shutil.rmtree(local_path)
+
+        # Clone with token authentication in a thread to avoid blocking event loop
+        clone_url = repo.clone_url.replace(
+            "https://",
+            f"https://x-access-token:{access_token}@"
+        )
+
+        await asyncio.to_thread(Repo.clone_from, clone_url, local_path, depth=1)
+
+        # Update repository record on success
+        repo.local_path = local_path
+        repo.status = "cloned"
+        repositories_db[repo.id] = repo
+        _save_repositories()
+
+    except Exception as e:
+        repo.status = "error"
+        repo.error_message = str(e)
+        repositories_db[repo.id] = repo
+        _save_repositories()
 
 
 @router.get("/github", response_model=List[dict])
-async def list_github_repos(authorization: str = Header(None)):
+async def list_github_repos(user: User = Depends(get_current_user)):
     """List user's GitHub repositories"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repos = await get_github_repos(user.access_token)
     
     return [
@@ -142,14 +195,9 @@ async def list_github_repos(authorization: str = Header(None)):
 async def connect_repository(
     request: RepositoryCreate,
     background_tasks: BackgroundTasks,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Connect and clone a GitHub repository"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     # Fetch repository info from GitHub
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -177,13 +225,15 @@ async def connect_repository(
         default_branch=github_repo.get("default_branch", "main"),
         language=github_repo.get("language"),
         clone_url=github_repo["clone_url"],
+        status="cloning",
     )
-    
+
     repositories_db[repo_id] = repo
-    
+    _save_repositories()
+
     # Clone repository in background
     background_tasks.add_task(clone_repository, repo, user.access_token)
-    
+
     return RepositoryResponse(
         id=repo.id,
         name=repo.name,
@@ -192,17 +242,14 @@ async def connect_repository(
         language=repo.language,
         is_indexed=repo.is_indexed,
         indexed_at=repo.indexed_at,
+        status=repo.status,
+        error_message=repo.error_message,
     )
 
 
 @router.get("/", response_model=List[RepositoryResponse])
-async def list_repositories(authorization: str = Header(None)):
+async def list_repositories(user: User = Depends(get_current_user)):
     """List connected repositories"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     user_repos = [
         repo for repo in repositories_db.values()
         if repo.user_id == user.id
@@ -217,19 +264,16 @@ async def list_repositories(authorization: str = Header(None)):
             language=repo.language,
             is_indexed=repo.is_indexed,
             indexed_at=repo.indexed_at,
+            status=repo.status,
+            error_message=repo.error_message,
         )
         for repo in user_repos
     ]
 
 
 @router.get("/{repo_id}", response_model=RepositoryResponse)
-async def get_repository(repo_id: str, authorization: str = Header(None)):
+async def get_repository(repo_id: str, user: User = Depends(get_current_user)):
     """Get repository details"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -243,6 +287,8 @@ async def get_repository(repo_id: str, authorization: str = Header(None)):
         language=repo.language,
         is_indexed=repo.is_indexed,
         indexed_at=repo.indexed_at,
+        status=repo.status,
+        error_message=repo.error_message,
     )
 
 
@@ -250,16 +296,11 @@ async def get_repository(repo_id: str, authorization: str = Header(None)):
 async def index_repository(
     repo_id: str,
     background_tasks: BackgroundTasks,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Index repository for AI documentation"""
     from app.services.indexer import IndexerService
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -267,11 +308,16 @@ async def index_repository(
     
     if not repo.local_path or not os.path.exists(repo.local_path):
         raise HTTPException(status_code=400, detail="Repository not cloned yet")
-    
+
+    # Update status
+    repo.status = "indexing"
+    repositories_db[repo.id] = repo
+    _save_repositories()
+
     # Start indexing in background
     indexer = IndexerService()
     background_tasks.add_task(indexer.index_repository, repo)
-    
+
     return APIResponse(
         success=True,
         message="Repository indexing started"
@@ -279,13 +325,8 @@ async def index_repository(
 
 
 @router.delete("/{repo_id}")
-async def delete_repository(repo_id: str, authorization: str = Header(None)):
+async def delete_repository(repo_id: str, user: User = Depends(get_current_user)):
     """Delete a connected repository"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -294,9 +335,10 @@ async def delete_repository(repo_id: str, authorization: str = Header(None)):
     # Remove local files
     if repo.local_path and os.path.exists(repo.local_path):
         shutil.rmtree(repo.local_path)
-    
+
     # Remove from database
     del repositories_db[repo_id]
-    
+    _save_repositories()
+
     return APIResponse(success=True, message="Repository deleted")
 

@@ -3,6 +3,8 @@ Authentication Endpoints - GitHub OAuth
 """
 
 import secrets
+import json
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -22,6 +24,40 @@ settings = get_settings()
 users_db: dict[str, User] = {}
 sessions_db: dict[str, str] = {}  # session_token -> user_id
 
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+
+
+def _save_users():
+    """Persist users to disk"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "users.json")
+    data = {}
+    for uid, user in users_db.items():
+        data[uid] = user.model_dump()
+        # Convert datetime to ISO string for JSON serialization
+        if data[uid].get("created_at"):
+            data[uid]["created_at"] = data[uid]["created_at"].isoformat()
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+def _load_users():
+    """Load users from disk"""
+    filepath = os.path.join(DATA_DIR, "users.json")
+    if not os.path.exists(filepath):
+        return
+    try:
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        for uid, udata in data.items():
+            users_db[uid] = User(**udata)
+    except Exception:
+        pass  # Start fresh if file is corrupted
+
+
+# Load users on module init
+_load_users()
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token"""
@@ -39,18 +75,22 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
-async def get_current_user(authorization: str = None) -> Optional[User]:
-    """Get current authenticated user"""
+async def get_current_user(authorization: str = Header(None, alias="Authorization")) -> User:
+    """Get current authenticated user - use as Depends(get_current_user)"""
     if not authorization or not authorization.startswith("Bearer "):
-        return None
-    
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     token = authorization.replace("Bearer ", "")
     payload = decode_access_token(token)
-    
+
     if not payload or "user_id" not in payload:
-        return None
-    
-    return users_db.get(payload["user_id"])
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user = users_db.get(payload["user_id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User session expired. Please login again.")
+
+    return user
 
 
 @router.get("/github")
@@ -137,7 +177,8 @@ async def github_callback(code: str, state: str):
     )
     
     users_db[user_id] = user
-    
+    _save_users()
+
     # Create session token
     session_token = create_access_token({"user_id": user_id})
     
@@ -149,13 +190,8 @@ async def github_callback(code: str, state: str):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(authorization: Opt[str] = Header(None, alias="Authorization")):
+async def get_me(user: User = Depends(get_current_user)):
     """Get current user info"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -165,7 +201,7 @@ async def get_me(authorization: Opt[str] = Header(None, alias="Authorization")):
 
 
 @router.post("/logout")
-async def logout(authorization: Opt[str] = Header(None, alias="Authorization")):
+async def logout(user: User = Depends(get_current_user)):
     """Logout current user"""
     # In production, invalidate the token
     return APIResponse(success=True, message="Logged out successfully")

@@ -7,7 +7,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 
 from app.config import get_settings
 from app.models.schemas import (
@@ -15,6 +15,7 @@ from app.models.schemas import (
     DiagramData,
     DiagramType,
     APIResponse,
+    User,
 )
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.repositories import repositories_db
@@ -29,17 +30,12 @@ diagrams_db: dict[str, DiagramData] = {}
 @router.post("/generate", response_model=DiagramData)
 async def generate_diagram(
     request: DiagramRequest,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Generate a Mermaid diagram for repository/file"""
     from app.services.diagram_generator import DiagramGeneratorService
     from app.services.parser import ParserService
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     repo = repositories_db.get(request.repository_id)
     
     if not repo or repo.user_id != user.id:
@@ -101,13 +97,8 @@ async def generate_diagram(
 
 
 @router.get("/{diagram_id}", response_model=DiagramData)
-async def get_diagram(diagram_id: str, authorization: str = Header(None)):
+async def get_diagram(diagram_id: str, user: User = Depends(get_current_user)):
     """Get a diagram by ID"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     diagram = diagrams_db.get(diagram_id)
     
     if not diagram:
@@ -117,13 +108,8 @@ async def get_diagram(diagram_id: str, authorization: str = Header(None)):
 
 
 @router.get("/repository/{repo_id}", response_model=List[DiagramData])
-async def get_repository_diagrams(repo_id: str, authorization: str = Header(None)):
+async def get_repository_diagrams(repo_id: str, user: User = Depends(get_current_user)):
     """Get all diagrams for a repository"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -134,13 +120,8 @@ async def get_repository_diagrams(repo_id: str, authorization: str = Header(None
 
 
 @router.delete("/{diagram_id}")
-async def delete_diagram(diagram_id: str, authorization: str = Header(None)):
+async def delete_diagram(diagram_id: str, user: User = Depends(get_current_user)):
     """Delete a diagram"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     if diagram_id not in diagrams_db:
         raise HTTPException(status_code=404, detail="Diagram not found")
     
@@ -150,13 +131,8 @@ async def delete_diagram(diagram_id: str, authorization: str = Header(None)):
 
 
 @router.post("/preview")
-async def preview_diagram(mermaid_code: str, authorization: str = Header(None)):
+async def preview_diagram(mermaid_code: str, user: User = Depends(get_current_user)):
     """Preview a Mermaid diagram (validate syntax)"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     # Basic syntax validation
     valid_starts = ["flowchart", "graph", "sequenceDiagram", "classDiagram", "erDiagram", "stateDiagram"]
     

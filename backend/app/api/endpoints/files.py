@@ -5,12 +5,13 @@ File Management Endpoints
 import os
 from typing import List, Optional
 import mimetypes
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from fastapi.responses import PlainTextResponse
 
 from app.config import get_settings
-from app.models.schemas import FileNode, ASTNode, DependencyGraph
+from app.models.schemas import FileNode, ASTNode, DependencyGraph, User
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.repositories import repositories_db, should_ignore
 
@@ -62,26 +63,29 @@ def get_language(file_path: str) -> Optional[str]:
     return LANGUAGE_MAP.get(ext)
 
 
+HIDDEN_DIRS = {".git", ".svn", ".hg", "__pycache__", ".DS_Store"}
+
 def build_file_tree(base_path: str, relative_path: str = "") -> List[FileNode]:
     """Recursively build file tree structure"""
     nodes = []
     current_path = os.path.join(base_path, relative_path) if relative_path else base_path
-    
+
     try:
         entries = sorted(os.listdir(current_path))
     except PermissionError:
         return nodes
-    
+
     # Separate directories and files
     dirs = []
     files = []
-    
+
     for entry in entries:
-        if entry.startswith("."):
+        # Skip specific hidden dirs/files, but allow important dot-files like .env.example
+        if entry in HIDDEN_DIRS:
             continue
-        
+
         entry_relative = os.path.join(relative_path, entry) if relative_path else entry
-        
+
         if should_ignore(entry_relative):
             continue
         
@@ -130,13 +134,8 @@ def build_file_tree(base_path: str, relative_path: str = "") -> List[FileNode]:
 
 
 @router.get("/{repo_id}/tree", response_model=List[FileNode])
-async def get_file_tree(repo_id: str, authorization: str = Header(None)):
+async def get_file_tree(repo_id: str, user: User = Depends(get_current_user)):
     """Get repository file tree"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:
@@ -152,28 +151,26 @@ async def get_file_tree(repo_id: str, authorization: str = Header(None)):
 async def get_file_content(
     repo_id: str,
     path: str,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ) -> PlainTextResponse:
     """Get file content"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
-    
+
     if not repo or repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
-    
+
     if not repo.local_path:
         raise HTTPException(status_code=400, detail="Repository not cloned yet")
-    
-    # Sanitize path to prevent directory traversal
-    safe_path = os.path.normpath(path).lstrip(os.sep).lstrip("/")
+
+    # Normalize path separators - frontend always sends forward slashes
+    safe_path = path.replace("\\", "/")
+    safe_path = os.path.normpath(safe_path).lstrip(os.sep).lstrip("/")
     full_path = os.path.join(repo.local_path, safe_path)
-    
-    # Ensure path is within repository
-    if not os.path.abspath(full_path).startswith(os.path.abspath(repo.local_path)):
+
+    # Ensure path is within repository using Path.resolve() for robustness
+    full_resolved = Path(full_path).resolve()
+    repo_resolved = Path(repo.local_path).resolve()
+    if not str(full_resolved).startswith(str(repo_resolved)):
         raise HTTPException(status_code=403, detail="Access denied")
     
     if not os.path.exists(full_path):
@@ -196,42 +193,38 @@ async def get_file_content(
 async def get_file_ast(
     repo_id: str,
     path: str,
-    authorization: str = Header(None)
+    request: Request,
+    user: User = Depends(get_current_user)
 ) -> List[ASTNode]:
     """Get AST for a file"""
-    from app.services.parser import ParserService
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     repo = repositories_db.get(repo_id)
-    
+
     if not repo or repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
-    
+
     if not repo.local_path:
         raise HTTPException(status_code=400, detail="Repository not cloned yet")
-    
-    # Sanitize path
-    safe_path = os.path.normpath(path).lstrip(os.sep).lstrip("/")
+
+    # Normalize path separators - frontend always sends forward slashes
+    safe_path = path.replace("\\", "/")
+    safe_path = os.path.normpath(safe_path).lstrip(os.sep).lstrip("/")
     full_path = os.path.join(repo.local_path, safe_path)
-    
+
     if not os.path.exists(full_path) or os.path.isdir(full_path):
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     language = get_language(safe_path)
-    
+
     if not language:
         raise HTTPException(status_code=400, detail="Unsupported file type")
-    
-    parser = ParserService()
-    
+
+    # Use parser from app state instead of creating new instance
+    parser = request.app.state.parser
+
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         ast_nodes = parser.parse_file(content, language, safe_path)
         return ast_nodes
     except Exception as e:
@@ -241,16 +234,11 @@ async def get_file_ast(
 @router.get("/{repo_id}/dependencies", response_model=DependencyGraph)
 async def get_dependency_graph(
     repo_id: str,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ) -> DependencyGraph:
     """Get dependency graph for repository"""
     from app.services.dependency_analyzer import DependencyAnalyzer
-    
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     repo = repositories_db.get(repo_id)
     
     if not repo or repo.user_id != user.id:

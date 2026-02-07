@@ -10,13 +10,14 @@ from typing import Dict, Any
 import uuid
 import time
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 
 from app.config import get_settings
 from app.models.schemas import (
     SandboxExecutionRequest,
     SandboxExecutionResult,
     APIResponse,
+    User,
 )
 from app.api.endpoints.auth import get_current_user
 
@@ -190,14 +191,9 @@ def json_stringify(value: Any) -> str:
 @router.post("/execute", response_model=SandboxExecutionResult)
 async def execute_code(
     request: SandboxExecutionRequest,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Execute code in sandbox environment"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     result = await execute_code_async(
         code=request.code,
         language=request.language,
@@ -208,13 +204,8 @@ async def execute_code(
 
 
 @router.get("/languages")
-async def get_supported_languages(authorization: str = Header(None)):
+async def get_supported_languages(user: User = Depends(get_current_user)):
     """Get list of supported languages for sandbox"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     return {
         "languages": list(LANGUAGE_CONFIG.keys()),
         "details": {
@@ -230,14 +221,9 @@ async def get_supported_languages(authorization: str = Header(None)):
 @router.post("/validate")
 async def validate_code(
     request: SandboxExecutionRequest,
-    authorization: str = Header(None)
+    user: User = Depends(get_current_user)
 ):
     """Validate code without executing"""
-    user = await get_current_user(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     is_safe, error_msg = sanitize_code(request.code, request.language)
     
     if not is_safe:

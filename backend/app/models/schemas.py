@@ -78,6 +78,8 @@ class Repository(BaseModel):
     is_indexed: bool = False
     indexed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = "pending"  # pending, cloning, cloned, indexing, indexed, error
+    error_message: Optional[str] = None
 
 
 class RepositoryCreate(BaseModel):
@@ -94,6 +96,8 @@ class RepositoryResponse(BaseModel):
     language: Optional[str] = None
     is_indexed: bool
     indexed_at: Optional[datetime] = None
+    status: str = "pending"  # pending, cloning, cloned, indexing, indexed, error
+    error_message: Optional[str] = None
 
 
 # ============================================================

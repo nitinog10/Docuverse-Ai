@@ -8,6 +8,7 @@ Coordinates the full indexing pipeline:
 """
 
 import os
+import json
 from datetime import datetime
 from typing import List, Optional
 import uuid
@@ -28,9 +29,9 @@ class IndexerService:
     Parses code, analyzes dependencies, and stores in vector database.
     """
     
-    def __init__(self):
-        self.parser = ParserService()
-        self.vector_store = VectorStoreService()
+    def __init__(self, vector_store=None, parser=None):
+        self.parser = parser or ParserService()
+        self.vector_store = vector_store or VectorStoreService()
         self.dependency_analyzer = DependencyAnalyzer()
     
     async def index_repository(self, repo: Repository) -> bool:
@@ -68,11 +69,26 @@ class IndexerService:
             # Step 4: Update repository status
             repo.is_indexed = True
             repo.indexed_at = datetime.utcnow()
-            
+            repo.status = "indexed"
+
+            # Save repository state
+            from app.api.endpoints.repositories import repositories_db, _save_repositories
+            repositories_db[repo.id] = repo
+            _save_repositories()
+
             print(f"✅ Indexing complete for {repo.name}")
             return True
-            
+
         except Exception as e:
+            # Update status to error
+            repo.status = "error"
+            repo.error_message = f"Indexing failed: {str(e)}"
+
+            # Save repository state
+            from app.api.endpoints.repositories import repositories_db, _save_repositories
+            repositories_db[repo.id] = repo
+            _save_repositories()
+
             print(f"❌ Indexing failed for {repo.name}: {e}")
             return False
     
@@ -157,6 +173,15 @@ class IndexerService:
                     node.end_line
                 )
                 
+                # Build metadata with ChromaDB-compatible types
+                metadata = {
+                    "repository_id": repository_id,
+                    "language": language,
+                    "docstring": node.docstring or "",
+                    "parameters": json.dumps(node.parameters) if node.parameters else "",
+                    "return_type": node.return_type or "",
+                }
+
                 chunk = CodeChunk(
                     id=f"chunk_{uuid.uuid4().hex[:12]}",
                     file_path=relative_path,
@@ -165,13 +190,7 @@ class IndexerService:
                     end_line=node.end_line,
                     chunk_type=node.type,
                     name=node.name,
-                    metadata={
-                        "repository_id": repository_id,
-                        "language": language,
-                        "docstring": node.docstring,
-                        "parameters": node.parameters,
-                        "return_type": node.return_type,
-                    }
+                    metadata=metadata
                 )
                 chunks.append(chunk)
         
