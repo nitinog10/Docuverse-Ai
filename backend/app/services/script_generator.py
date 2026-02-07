@@ -54,11 +54,11 @@ class ScriptGeneratorService:
             
             print("✅ LangChain initialized with GPT-4o")
             
-        except ImportError:
-            print("⚠️ LangChain not installed, using mock generator")
+        except ImportError as e:
+            print(f"⚠️ LangChain not installed ({e}), using mock generator")
             self._llm = "mock"
         except Exception as e:
-            print(f"⚠️ LangChain initialization failed: {e}")
+            print(f"⚠️ LangChain initialization failed: {type(e).__name__}: {e}")
             self._llm = "mock"
     
     async def generate_script(
@@ -98,7 +98,7 @@ class ScriptGeneratorService:
         
         # Generate segments for each major code block
         for node in ast_nodes:
-            if node.type in [NodeType.FUNCTION, NodeType.CLASS, NodeType.METHOD]:
+            if node.type in [NodeType.FUNCTION, NodeType.CLASS, NodeType.METHOD, NodeType.SECTION]:
                 segment = await self._generate_node_segment(
                     node, lines, view_mode, len(segments)
                 )
@@ -193,20 +193,50 @@ class ScriptGeneratorService:
             if view_mode == ViewMode.DEVELOPER:
                 if node.type == NodeType.FUNCTION:
                     params_str = ", ".join(node.parameters) if node.parameters else "no parameters"
+                    # Extract key details from actual code
+                    code_lines = node_code.strip().split("\n")
+                    # Find return statements
+                    returns = [l.strip() for l in code_lines if "return " in l]
+                    return_info = f" It returns {returns[0].replace('return ', '')}. " if returns else " "
+                    # Find key operations (assignments, calls)
+                    body_summary = ""
+                    for cl in code_lines[1:6]:  # first 5 body lines
+                        stripped = cl.strip()
+                        if stripped and not stripped.startswith("#") and not stripped.startswith('"""'):
+                            body_summary += f" {stripped};"
+                    if body_summary:
+                        body_summary = f" Key operations include:{body_summary}"
                     text = (
                         f"Now let's look at the function '{node.name}'. "
                         f"It takes {params_str}. "
-                        f"This function is responsible for handling specific logic. "
-                        f"The implementation spans from line {node.start_line} to {node.end_line}."
+                        f"This function spans lines {node.start_line} to {node.end_line}."
+                        f"{return_info}"
+                        f"{body_summary}"
                     )
                 elif node.type == NodeType.CLASS:
+                    # Extract method names from class body
+                    methods = [l.strip().replace("def ", "").split("(")[0] 
+                              for l in node_code.split("\n") if "def " in l]
+                    methods_str = ", ".join(methods[:5]) if methods else "no visible methods"
                     text = (
-                        f"Here we have the class '{node.name}'. "
-                        f"This class encapsulates related functionality and data. "
-                        f"Let's examine its structure and methods."
+                        f"Here we have the class '{node.name}', "
+                        f"defined from line {node.start_line} to {node.end_line}. "
+                        f"It contains the following methods: {methods_str}. "
+                        f"Let's examine its structure."
+                    )
+                elif node.type == NodeType.SECTION:
+                    # For text/markdown sections, summarize the content
+                    content_preview = node_code.strip()[:300]
+                    text = (
+                        f"Now let's look at the section '{node.name}'. "
+                        f"This section spans lines {node.start_line} to {node.end_line}. "
+                        f"Here is what it says: {content_preview}"
                     )
                 else:
-                    text = f"Let's examine {node.name} which is defined here."
+                    text = (
+                        f"Let's examine '{node.name}' defined at line {node.start_line}. "
+                        f"Here is the code: {node_code[:200]}"
+                    )
             else:
                 text = (
                     f"The {node.type.value} '{node.name}' provides important business functionality. "
@@ -222,7 +252,8 @@ class ScriptGeneratorService:
             text=text,
             start_line=node.start_line,
             end_line=node.end_line,
-            highlight_lines=list(range(node.start_line, node.end_line + 1)),
+            # Highlight only the signature + first ~5 body lines, not the entire function
+            highlight_lines=list(range(node.start_line, min(node.start_line + 6, node.end_line + 1))),
             duration_estimate=self._estimate_duration(text),
             code_context=node_code[:500],
         )
@@ -248,12 +279,17 @@ class ScriptGeneratorService:
                 f"Feel free to explore related modules for a complete picture."
             )
         
+        # Point conclusion to end of file instead of line 1
+        last_node = ast_nodes[-1] if ast_nodes else None
+        conclusion_start = last_node.end_line if last_node else 1
+        conclusion_end = last_node.end_line if last_node else 1
+        
         return ScriptSegment(
             id=f"seg_{uuid.uuid4().hex[:8]}",
             order=order,
             text=text,
-            start_line=1,
-            end_line=1,
+            start_line=conclusion_start,
+            end_line=conclusion_end,
             highlight_lines=[],
             duration_estimate=self._estimate_duration(text),
         )
@@ -365,8 +401,23 @@ Requirements:
             return response.content
             
         except Exception as e:
-            print(f"LLM call failed: {e}")
-            return "This section contains important code logic."
+            print(f"⚠️ LLM call failed ({type(e).__name__}): {e}")
+            # Extract useful info from the prompt to build a meaningful fallback
+            # rather than returning a generic message
+            lines = prompt.split('\n')
+            # Try to find the code snippet in the prompt
+            code_start = None
+            code_end = None
+            for i, line in enumerate(lines):
+                if line.strip() == '```' and code_start is None:
+                    code_start = i + 1
+                elif line.strip() == '```' and code_start is not None:
+                    code_end = i
+                    break
+            if code_start and code_end:
+                code_preview = '\n'.join(lines[code_start:min(code_start + 5, code_end)])
+                return f"This section contains the following code: {code_preview.strip()}"
+            return "This section contains code logic. Enable a valid OpenAI API key for detailed AI-generated explanations."
     
     def _estimate_duration(self, text: str) -> float:
         """Estimate speech duration in seconds (average 150 words per minute)"""

@@ -26,6 +26,7 @@ class NodeType(str, Enum):
     VARIABLE = "variable"
     IMPORT = "import"
     MODULE = "module"
+    SECTION = "section"
 
 
 class DiagramType(str, Enum):

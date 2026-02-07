@@ -30,6 +30,14 @@ LANGUAGE_EXTENSIONS = {
     ".php": "php",
 }
 
+# Text/doc file extensions that we can still walk through
+TEXT_EXTENSIONS = {
+    ".md", ".txt", ".rst", ".json", ".yaml", ".yml",
+    ".toml", ".cfg", ".ini", ".csv", ".xml", ".html",
+    ".css", ".scss", ".sql", ".sh", ".bash", ".zsh",
+    ".dockerfile", ".env", ".gitignore", ".editorconfig",
+}
+
 
 class ParserService:
     """
@@ -110,7 +118,81 @@ class ParserService:
     def detect_language(self, file_path: str) -> Optional[str]:
         """Detect language from file extension"""
         _, ext = os.path.splitext(file_path.lower())
-        return LANGUAGE_EXTENSIONS.get(ext)
+        lang = LANGUAGE_EXTENSIONS.get(ext)
+        if lang:
+            return lang
+        # Return 'text' for known text file extensions or extensionless files
+        if ext in TEXT_EXTENSIONS or ext == "":
+            return "text"
+        # Also handle files with no extension that might be text
+        basename = os.path.basename(file_path).lower()
+        if basename in ("dockerfile", "makefile", "gemfile", "rakefile", "procfile", ".env", ".gitignore"):
+            return "text"
+        return None
+    
+    def is_text_language(self, language: str) -> bool:
+        """Check if the language is a text-based file (not code)"""
+        return language == "text"
+    
+    def parse_text_file(self, content: str, file_path: str) -> List[ASTNode]:
+        """Parse a text file into sections (by headings for .md, or by chunks)."""
+        import re
+        _, ext = os.path.splitext(file_path.lower())
+        lines = content.split("\n")
+        nodes = []
+        
+        if ext in (".md", ".rst"):
+            # Split markdown by headings
+            section_starts = []
+            for i, line in enumerate(lines):
+                if re.match(r'^#{1,6}\s+', line):
+                    section_starts.append(i)
+            
+            if not section_starts:
+                # No headings — treat entire file as one section
+                nodes.append(ASTNode(
+                    id=f"{file_path}:1:{uuid.uuid4().hex[:6]}",
+                    type=NodeType.SECTION,
+                    name=os.path.basename(file_path),
+                    start_line=1,
+                    end_line=len(lines),
+                    start_col=0,
+                    end_col=0,
+                ))
+            else:
+                for idx, start in enumerate(section_starts):
+                    end = section_starts[idx + 1] - 1 if idx + 1 < len(section_starts) else len(lines)
+                    heading = lines[start].lstrip('#').strip()
+                    nodes.append(ASTNode(
+                        id=f"{file_path}:{start + 1}:{uuid.uuid4().hex[:6]}",
+                        type=NodeType.SECTION,
+                        name=heading or f"Section {idx + 1}",
+                        start_line=start + 1,
+                        end_line=end,
+                        start_col=0,
+                        end_col=0,
+                    ))
+        else:
+            # For other text files, chunk into ~30-line sections
+            chunk_size = 30
+            for i in range(0, len(lines), chunk_size):
+                end = min(i + chunk_size, len(lines))
+                first_nonempty = next(
+                    (lines[j].strip() for j in range(i, end) if lines[j].strip()),
+                    f"Lines {i + 1}-{end}"
+                )
+                name = first_nonempty[:60]
+                nodes.append(ASTNode(
+                    id=f"{file_path}:{i + 1}:{uuid.uuid4().hex[:6]}",
+                    type=NodeType.SECTION,
+                    name=name,
+                    start_line=i + 1,
+                    end_line=end,
+                    start_col=0,
+                    end_col=0,
+                ))
+        
+        return nodes
     
     def parse_file(
         self, 

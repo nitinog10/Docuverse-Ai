@@ -1,25 +1,29 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useUserStore } from '@/lib/store'
 
-const PUBLIC_ROUTES = ['/auth/signin', '/auth/callback', '/']
+const PUBLIC_ROUTES = ['/auth/signin', '/auth/callback', '/', '/login']
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { token, setToken, logout } = useUserStore()
+  const [isHydrated, setIsHydrated] = useState(false)
 
+  // Rehydrate store on mount — must complete before auth check
   useEffect(() => {
-    // Rehydrate store on mount
     useUserStore.persist.rehydrate()
+    setIsHydrated(true)
   }, [])
 
-  // Simple auth check - only verify token exists, don't call backend
+  // Simple auth check — only runs after hydration is complete
   useEffect(() => {
+    if (!isHydrated) return
+
     // Skip for public routes
-    if (PUBLIC_ROUTES.includes(pathname)) return
+    if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) return
 
     // Get token from localStorage
     const storedToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null
@@ -34,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedToken && storedToken !== token) {
       setToken(storedToken)
     }
-  }, [pathname, token, setToken, router])
+  }, [isHydrated, pathname, token, setToken, router])
 
   // Listen for storage events (token changes in other tabs)
   useEffect(() => {

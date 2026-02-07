@@ -74,7 +74,11 @@ async def generate_walkthrough(
     if not language:
         raise HTTPException(status_code=400, detail="Unsupported file type for walkthrough")
     
-    ast_nodes = parser.parse_file(content, language, safe_path)
+    # For text files (markdown, json, etc.), use section-based parsing
+    if parser.is_text_language(language):
+        ast_nodes = parser.parse_text_file(content, safe_path)
+    else:
+        ast_nodes = parser.parse_file(content, language, safe_path)
     
     # Generate walkthrough script
     script_generator = ScriptGeneratorService()
@@ -182,10 +186,11 @@ async def get_walkthroughs_for_file(
     if not repo or repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    # Find walkthroughs for this file
+    # Find walkthroughs for this file in this repo
     walkthroughs = [
         wt for wt in walkthroughs_db.values()
         if wt.file_path == file_path
+        and wt.metadata.get("repository_id") == repo_id
     ]
     
     return walkthroughs

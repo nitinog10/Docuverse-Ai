@@ -26,6 +26,7 @@ interface ScriptSegment {
   endLine: number
   highlightLines: number[]
   durationEstimate: number
+  codeContext?: string
 }
 
 interface WalkthroughScript {
@@ -64,8 +65,16 @@ export function WalkthroughPlayer({
   const codeContainerRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const currentSegmentIndexRef = useRef(currentSegmentIndex)
+  const onPlayingChangeRef = useRef(onPlayingChange)
 
-  const currentSegment = script.segments[currentSegmentIndex]
+  // Keep refs in sync
+  useEffect(() => { currentSegmentIndexRef.current = currentSegmentIndex }, [currentSegmentIndex])
+  useEffect(() => { onPlayingChangeRef.current = onPlayingChange }, [onPlayingChange])
+
+  // Clamp index to valid bounds
+  const safeIndex = Math.min(currentSegmentIndex, Math.max(script.segments.length - 1, 0))
+  const currentSegment = script.segments.length > 0 ? script.segments[safeIndex] : undefined
   const lines = code.split('\n')
 
   // Initialize speech synthesis
@@ -77,12 +86,13 @@ export function WalkthroughPlayer({
       
       // Set up event handlers
       speechSynthRef.current.onend = () => {
-        // Move to next segment when speech ends
-        if (currentSegmentIndex < script.segments.length - 1) {
-          setCurrentSegmentIndex((idx) => idx + 1)
+        // Move to next segment when speech ends (read from refs to avoid stale closure)
+        const idx = currentSegmentIndexRef.current
+        if (idx < script.segments.length - 1) {
+          setCurrentSegmentIndex((prev) => Math.min(prev + 1, script.segments.length - 1))
           setSegmentProgress(0)
         } else {
-          onPlayingChange(false)
+          onPlayingChangeRef.current(false)
           setSegmentProgress(100)
         }
       }
@@ -233,6 +243,7 @@ export function WalkthroughPlayer({
   }
 
   const currentTime = (() => {
+    if (!currentSegment || !script.segments.length) return 0
     const completedDuration = script.segments
       .slice(0, currentSegmentIndex)
       .reduce((sum, seg) => sum + seg.durationEstimate, 0)
@@ -248,8 +259,9 @@ export function WalkthroughPlayer({
       >
         {lines.map((line, index) => {
           const lineNumber = index + 1
-          const isHighlighted = currentSegment.highlightLines.includes(lineNumber)
-          const isInRange = lineNumber >= currentSegment.startLine && lineNumber <= currentSegment.endLine
+          const highlightLines = currentSegment?.highlightLines ?? []
+          const isHighlighted = highlightLines.includes(lineNumber)
+          const isInRange = currentSegment ? (lineNumber >= currentSegment.startLine && lineNumber <= currentSegment.endLine) : false
 
           return (
             <motion.div
@@ -300,7 +312,7 @@ export function WalkthroughPlayer({
                   <p className="text-sm text-dv-text-muted mb-1">
                     Segment {currentSegmentIndex + 1} of {script.segments.length}
                   </p>
-                  <p className="text-dv-text leading-relaxed">{currentSegment.text}</p>
+                  <p className="text-dv-text leading-relaxed">{currentSegment?.text ?? ''}</p>
                 </div>
               </div>
             </div>
@@ -423,28 +435,48 @@ export function WalkthroughPlayer({
   )
 }
 
-// Simple syntax highlighting component
+// Simple syntax highlighting component using tokenization (no dangerouslySetInnerHTML)
 function SyntaxHighlight({ code }: { code: string }) {
-  // This is a simplified syntax highlighter
-  // In production, use a proper library like Prism or Shiki
-  const patterns = [
-    { regex: /(#.*)$/gm, className: 'text-dv-text-muted' }, // Comments
-    { regex: /\b(def|class|return|if|else|elif|for|while|try|except|import|from|async|await|with|as|None|True|False)\b/g, className: 'text-dv-purple' }, // Keywords
-    { regex: /(".*?"|'.*?'|"""[\s\S]*?"""|'''[\s\S]*?''')/g, className: 'text-dv-success' }, // Strings
-    { regex: /\b(\d+\.?\d*)\b/g, className: 'text-dv-warning' }, // Numbers
-    { regex: /\b([A-Z][a-zA-Z0-9_]*)\b/g, className: 'text-dv-cyan' }, // Classes
-    { regex: /\b(\w+)\s*\(/g, className: 'text-dv-accent' }, // Functions
-  ]
+  // Single combined regex — alternation ensures each character is matched only once,
+  // preventing earlier matches from being re-processed by later patterns.
+  const tokenRegex =
+    /(#.*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b(?:def|class|return|if|else|elif|for|while|try|except|import|from|async|await|with|as|None|True|False|const|let|var|function|export|default|interface|type|enum|extends|implements|new|this|super|throw|catch|finally|switch|case|break|continue|yield|of|in|instanceof|typeof|void|delete|null|undefined|true|false)\b)|(\b\d+\.?\d*\b)|(\b[A-Z][a-zA-Z0-9_]*\b)|(\b\w+(?=\s*\())/gm
 
-  let result = code
+  const tokens: { text: string; className?: string }[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
 
-  // Apply each pattern (simplified - in production use proper tokenization)
-  patterns.forEach(({ regex, className }) => {
-    result = result.replace(regex, (match) => {
-      return `<span class="${className}">${match}</span>`
-    })
-  })
+  while ((match = tokenRegex.exec(code)) !== null) {
+    // Plain text before this match
+    if (match.index > lastIndex) {
+      tokens.push({ text: code.slice(lastIndex, match.index) })
+    }
 
-  return <span dangerouslySetInnerHTML={{ __html: result }} />
+    let className: string | undefined
+    if (match[1]) className = 'text-dv-text-muted'   // Comments
+    else if (match[2]) className = 'text-dv-success'  // Strings
+    else if (match[3]) className = 'text-dv-purple'   // Keywords
+    else if (match[4]) className = 'text-dv-warning'  // Numbers
+    else if (match[5]) className = 'text-dv-cyan'     // PascalCase / Classes
+    else if (match[6]) className = 'text-dv-accent'   // Function calls
+
+    tokens.push({ text: match[0], className })
+    lastIndex = match.index + match[0].length
+  }
+
+  // Remaining plain text
+  if (lastIndex < code.length) {
+    tokens.push({ text: code.slice(lastIndex) })
+  }
+
+  return (
+    <>
+      {tokens.map((tok, i) =>
+        tok.className
+          ? <span key={i} className={tok.className}>{tok.text}</span>
+          : <span key={i}>{tok.text}</span>
+      )}
+    </>
+  )
 }
 
