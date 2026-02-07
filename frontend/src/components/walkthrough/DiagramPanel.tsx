@@ -50,7 +50,7 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
 
   // Re-generate when type or file changes
   useEffect(() => {
-    renderDiagram()
+    generateDiagram()
     
     // Cleanup function
     return () => {
@@ -58,7 +58,7 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
         containerRef.current.innerHTML = ''
       }
     }
-  }, [diagramType])
+  }, [diagramType, filePath])
 
   // Render mermaid when code changes
   useEffect(() => {
@@ -99,7 +99,7 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
       renderCountRef.current += 1
       const diagramId = `diagram-${renderCountRef.current}`
       
-      const { svg } = await mermaid.render(diagramId, mockDiagrams[diagramType])
+      const { svg } = await mermaid.render(diagramId, code)
       
       // Only update if component is still mounted
       if (containerRef.current) {
@@ -109,8 +109,9 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
       console.error('Error rendering diagram:', error)
       if (containerRef.current) {
         containerRef.current.innerHTML = `
-          <div class="flex items-center justify-center h-full text-dv-text-muted">
-            <p>Error rendering diagram</p>
+          <div class="flex flex-col items-center justify-center h-full text-dv-text-muted gap-2">
+            <p>Could not render diagram</p>
+            <p class="text-xs opacity-60">The file may not contain structures for this diagram type</p>
           </div>
         `
       }

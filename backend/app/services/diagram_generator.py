@@ -204,6 +204,13 @@ class DiagramGeneratorService:
         
         classes = [n for n in ast_nodes if n.type == NodeType.CLASS]
         
+        if not classes:
+            lines.append("    class NoClassesFound {")
+            lines.append("        +No classes detected in this file")
+            lines.append("    }")
+            lines.append("    note for NoClassesFound \"Try a file containing class definitions\"")
+            return "\n".join(lines)
+        
         for cls in classes:
             lines.append(f"    class {cls.name} {{")
             

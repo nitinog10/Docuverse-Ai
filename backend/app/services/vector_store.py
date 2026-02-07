@@ -9,6 +9,11 @@ import os
 from typing import List, Optional, Dict, Any
 import uuid
 
+# NumPy 2.0 removed np.float_ — patch it back for older chromadb versions
+import numpy as np
+if not hasattr(np, 'float_'):
+    np.float_ = np.float64
+
 from app.config import get_settings
 from app.models.schemas import CodeChunk, NodeType
 
