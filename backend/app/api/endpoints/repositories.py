@@ -21,12 +21,13 @@ from app.models.schemas import (
     FileNode,
 )
 from app.api.endpoints.auth import get_current_user, users_db
+from app.services.persistence import save_repositories, load_repositories
 
 router = APIRouter()
 settings = get_settings()
 
-# In-memory repository store (replace with database in production)
-repositories_db: dict[str, Repository] = {}
+# Load repositories from persistence on startup
+repositories_db: dict[str, Repository] = load_repositories()
 
 # Directories to ignore when indexing
 IGNORE_PATTERNS = {
@@ -111,6 +112,9 @@ async def clone_repository(repo: Repository, access_token: str):
     # Update repository record
     repo.local_path = local_path
     repositories_db[repo.id] = repo
+    
+    # Save to persistence
+    save_repositories(repositories_db)
 
 
 @router.get("/github", response_model=List[dict])
@@ -180,6 +184,9 @@ async def connect_repository(
     )
     
     repositories_db[repo_id] = repo
+    
+    # Save to persistence
+    save_repositories(repositories_db)
     
     # Clone repository in background
     background_tasks.add_task(clone_repository, repo, user.access_token)
@@ -297,6 +304,9 @@ async def delete_repository(repo_id: str, authorization: str = Header(None)):
     
     # Remove from database
     del repositories_db[repo_id]
+    
+    # Save to persistence
+    save_repositories(repositories_db)
     
     return APIResponse(success=True, message="Repository deleted")
 

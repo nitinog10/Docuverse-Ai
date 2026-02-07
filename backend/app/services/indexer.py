@@ -69,6 +69,12 @@ class IndexerService:
             repo.is_indexed = True
             repo.indexed_at = datetime.utcnow()
             
+            # Save repository state to persistence
+            from app.api.endpoints.repositories import repositories_db
+            from app.services.persistence import save_repositories
+            repositories_db[repo.id] = repo
+            save_repositories(repositories_db)
+            
             print(f"✅ Indexing complete for {repo.name}")
             return True
             

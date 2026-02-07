@@ -54,13 +54,18 @@ function AuthCallbackContent() {
     }
 
     try {
-      // Store the token first (this also saves to localStorage)
+      // Store the token in localStorage first
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', token)
+      }
+      
+      // Then update the store
       setToken(token)
       
-      // Wait a moment for localStorage to be updated
+      // Wait a moment for state to update
       await new Promise(resolve => setTimeout(resolve, 100))
 
-      // Fetch user info using the API client (which reads from localStorage)
+      // Fetch user info using the API client
       const api = await import('@/lib/api')
       const user = await api.auth.getMe()
       

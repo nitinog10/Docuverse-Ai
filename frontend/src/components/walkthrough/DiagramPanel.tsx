@@ -32,6 +32,7 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const renderCountRef = useRef(0)
 
   const generateDiagram = async () => {
     if (!filePath) return
@@ -49,8 +50,15 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
 
   // Re-generate when type or file changes
   useEffect(() => {
-    generateDiagram()
-  }, [diagramType, filePath])
+    renderDiagram()
+    
+    // Cleanup function
+    return () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
+      }
+    }
+  }, [diagramType])
 
   // Render mermaid when code changes
   useEffect(() => {
@@ -60,6 +68,12 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
 
   const renderMermaid = async (code: string) => {
     if (!containerRef.current) return
+    
+    setIsLoading(true)
+    
+    // Clear previous content to prevent React conflicts
+    containerRef.current.innerHTML = ''
+    
     try {
       const mermaid = (await import('mermaid')).default
       mermaid.initialize({
@@ -80,12 +94,28 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
           edgeLabelBackground: '#18181b',
         },
       })
-      const { svg } = await mermaid.render('diagram-' + Date.now(), code)
-      containerRef.current.innerHTML = svg
-    } catch {
+
+      // Use unique ID for each render
+      renderCountRef.current += 1
+      const diagramId = `diagram-${renderCountRef.current}`
+      
+      const { svg } = await mermaid.render(diagramId, mockDiagrams[diagramType])
+      
+      // Only update if component is still mounted
       if (containerRef.current) {
-        containerRef.current.innerHTML = `<p class="text-xs text-dv-text-muted text-center py-8">Could not render diagram</p>`
+        containerRef.current.innerHTML = svg
       }
+    } catch (error) {
+      console.error('Error rendering diagram:', error)
+      if (containerRef.current) {
+        containerRef.current.innerHTML = `
+          <div class="flex items-center justify-center h-full text-dv-text-muted">
+            <p>Error rendering diagram</p>
+          </div>
+        `
+      }
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -149,26 +179,19 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
       </div>
 
       {/* Diagram container */}
-      <div className="flex-1 overflow-auto p-4">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
-            <Loader2 className="w-5 h-5 text-dv-accent animate-spin" />
-            <span className="text-xs text-dv-text-muted">Generating diagram…</span>
+      <div className="flex-1 overflow-auto p-4 relative">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-dv-bg z-10">
+            <div className="flex items-center gap-2 text-dv-text-muted">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span>Generating diagram...</span>
+            </div>
           </div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
-            <AlertCircle className="w-5 h-5 text-dv-error" />
-            <p className="text-xs text-dv-text-muted">{error}</p>
-            <button onClick={generateDiagram} className="text-xs text-dv-accent hover:underline mt-1">
-              Retry
-            </button>
-          </div>
-        ) : (
-          <div
-            ref={containerRef}
-            className="min-h-[200px] flex items-center justify-center [&_svg]:max-w-full"
-          />
         )}
+        <div
+          ref={containerRef}
+          className="min-h-[300px] flex items-center justify-center"
+        />
       </div>
 
       {/* Info */}

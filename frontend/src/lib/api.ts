@@ -24,11 +24,17 @@ class APIError extends Error {
   }
 }
 
+// Helper to get token from localStorage
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('token')
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options
 
-  // Get auth token from localStorage
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  // Always get fresh token from localStorage
+  const token = getAuthToken()
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
@@ -38,10 +44,20 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: 'include', // Include cookies for session management
   })
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
+    
+    // Handle unauthorized errors - just clear token, don't redirect
+    // Let AuthProvider handle redirects
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token')
+      }
+    }
+    
     throw new APIError(
       errorData.detail || 'An error occurred',
       response.status,
@@ -71,6 +87,26 @@ export const auth = {
   }>('/auth/me'),
   
   logout: () => request('/auth/logout', { method: 'POST' }),
+  
+  refresh: () => request<{
+    token: string
+    user: {
+      id: string
+      username: string
+      email: string | null
+      avatar_url: string | null
+    }
+  }>('/auth/refresh', { method: 'POST' }),
+  
+  verify: () => request<{
+    valid: boolean
+    user: {
+      id: string
+      username: string
+      email: string | null
+      avatar_url: string | null
+    }
+  }>('/auth/verify'),
 }
 
 // ============================================================
@@ -144,7 +180,7 @@ export const files = {
   getTree: (repoId: string) => request<FileNode[]>(`/files/${repoId}/tree`),
   
   getContent: async (repoId: string, path: string): Promise<string> => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    const token = getAuthToken()
     
     const response = await fetch(
       `${API_BASE_URL}/files/${repoId}/content?path=${encodeURIComponent(path)}`,
@@ -152,10 +188,14 @@ export const files = {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: 'include',
       }
     )
     
     if (!response.ok) {
+      if (response.status === 401 && typeof window !== 'undefined') {
+        localStorage.removeItem('token')
+      }
       throw new APIError('Failed to fetch file content', response.status)
     }
     

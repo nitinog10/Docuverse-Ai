@@ -5,6 +5,7 @@ import { SessionProvider } from 'next-auth/react'
 import { useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { useHydration } from '@/lib/store'
+import { AuthProvider } from '@/components/AuthProvider'
 
 function StoreHydration() {
   useHydration()
@@ -28,7 +29,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         <StoreHydration />
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <Toaster
           position="bottom-right"
           toastOptions={{
