@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = ""
     
-    # Text-to-Speech (pyttsx3)
-    tts_voice_id: str = ""  # Leave empty to use system default voice
-    tts_rate: int = 150  # Words per minute (default speaking rate)
+    # ElevenLabs Text-to-Speech
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel voice
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
     
     # ChromaDB
     chroma_persist_directory: str = "./chroma_db"

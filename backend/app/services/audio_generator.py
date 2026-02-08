@@ -1,64 +1,80 @@
 """
-Audio Generator Service - Text-to-Speech Integration
+Audio Generator Service - ElevenLabs Text-to-Speech Integration
 
-Converts walkthrough scripts into AI voice narration using pyttsx3.
-Creates the "Senior Engineer" persona voice.
+Converts walkthrough scripts into high-quality AI voice narration
+using the ElevenLabs API.  Falls back to silent mock audio when
+the API key is not configured.
 """
 
 import os
-import io
-import tempfile
+import struct
 from typing import Optional, AsyncIterator
+
+import httpx
 import aiofiles
 
 from app.config import get_settings
 
 settings = get_settings()
 
+ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
+
 
 class AudioGeneratorService:
     """
-    pyttsx3-based audio synthesis service.
-    
-    Converts text scripts into speech using the system's
-    text-to-speech engine (offline, no API key required).
+    ElevenLabs-powered audio synthesis service.
+
+    Converts text scripts into natural-sounding speech via the
+    ElevenLabs REST API (MP3).  When the API key is absent the
+    service falls back to a tiny silent WAV so the rest of the
+    pipeline keeps working.
     """
-    
+
     def __init__(self):
-        self._engine = None
-        self._voice_id = settings.tts_voice_id
-        self._rate = settings.tts_rate
-    
-    def _initialize(self):
-        """Lazy initialization of pyttsx3 engine"""
-        if self._engine is not None:
-            return
-        
-        try:
-            import pyttsx3
-            
-            self._engine = pyttsx3.init()
-            
-            # Configure voice settings
-            self._engine.setProperty('rate', self._rate)
-            
-            # Try to set the voice if specified
-            if self._voice_id:
-                voices = self._engine.getProperty('voices')
-                for voice in voices:
-                    if self._voice_id in voice.id:
-                        self._engine.setProperty('voice', voice.id)
-                        break
-            
-            print("✅ pyttsx3 TTS engine initialized")
-            
-        except ImportError:
-            print("⚠️ pyttsx3 not installed, using mock audio")
-            self._engine = "mock"
-        except Exception as e:
-            print(f"⚠️ pyttsx3 initialization failed: {e}")
-            self._engine = "mock"
-    
+        self._api_key: str = settings.elevenlabs_api_key
+        self._voice_id: str = settings.elevenlabs_voice_id
+        self._model_id: str = settings.elevenlabs_model_id
+        self._client: Optional[httpx.AsyncClient] = None
+        self._mode: str = "elevenlabs" if self._api_key else "mock"
+
+        if self._mode == "mock":
+            print("⚠️  ELEVENLABS_API_KEY not set – using silent mock audio")
+        else:
+            print(f"✅ ElevenLabs TTS ready  (voice={self._voice_id}, model={self._model_id})")
+
+    # ------------------------------------------------------------------
+    # HTTP client (lazy, reusable)
+    # ------------------------------------------------------------------
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=ELEVENLABS_BASE_URL,
+                headers={
+                    "xi-api-key": self._api_key,
+                    "Content-Type": "application/json",
+                },
+                timeout=60.0,
+            )
+        return self._client
+
+    def _voice_body(self, text: str) -> dict:
+        """Build the JSON payload shared by generate / stream calls."""
+        return {
+            "text": text,
+            "model_id": self._model_id,
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "use_speaker_boost": True,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Core generation
+    # ------------------------------------------------------------------
+
     async def generate_segment_audio(
         self,
         text: str,
@@ -66,203 +82,154 @@ class AudioGeneratorService:
     ) -> bytes:
         """
         Generate audio for a single text segment.
-        
-        Args:
-            text: Text to convert to speech
-            voice_id: Optional voice ID override
-            
-        Returns:
-            Audio data as bytes (WAV format)
+
+        Returns MP3 bytes (ElevenLabs) or WAV bytes (mock).
         """
-        self._initialize()
-        
-        if self._engine == "mock":
-            # Return a small silent audio for testing
+        if self._mode == "mock":
             return self._generate_mock_audio(text)
-        
+
         try:
-            # Set voice if override provided
-            if voice_id:
-                voices = self._engine.getProperty('voices')
-                for voice in voices:
-                    if voice_id in voice.id:
-                        self._engine.setProperty('voice', voice.id)
-                        break
-            
-            # Generate audio to a temporary file
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                tmp_path = tmp_file.name
-            
-            self._engine.save_to_file(text, tmp_path)
-            self._engine.runAndWait()
-            
-            # Read the generated audio
-            with open(tmp_path, 'rb') as f:
-                audio_bytes = f.read()
-            
-            # Clean up temp file
-            os.unlink(tmp_path)
-            
-            return audio_bytes
-            
+            client = await self._get_client()
+            vid = voice_id or self._voice_id
+
+            resp = await client.post(
+                f"/text-to-speech/{vid}",
+                json=self._voice_body(text),
+            )
+            resp.raise_for_status()
+            return resp.content
+
         except Exception as e:
-            print(f"Error generating audio: {e}")
+            print(f"⚠️  ElevenLabs API error: {e}")
             return self._generate_mock_audio(text)
-    
+
     async def generate_full_audio(
         self,
         segments: list[str],
         voice_id: Optional[str] = None,
     ) -> bytes:
-        """
-        Generate audio for multiple segments and concatenate.
-        
-        Args:
-            segments: List of text segments
-            voice_id: Optional voice ID override
-            
-        Returns:
-            Complete audio as bytes
-        """
-        # Combine all segments into one text for smoother audio
-        full_text = " ".join(segments)
-        return await self.generate_segment_audio(full_text, voice_id)
-    
+        """Generate and concatenate audio for multiple text segments."""
+        chunks: list[bytes] = []
+        for text in segments:
+            chunk = await self.generate_segment_audio(text, voice_id)
+            chunks.append(chunk)
+        return b"".join(chunks)
+
     async def stream_audio(
         self,
         text: str,
         voice_id: Optional[str] = None,
     ) -> AsyncIterator[bytes]:
         """
-        Stream audio generation for real-time playback.
-        
-        Note: pyttsx3 doesn't support true streaming, so we generate
-        the full audio and yield it in chunks.
-        
-        Args:
-            text: Text to convert to speech
-            voice_id: Optional voice ID override
-            
-        Yields:
-            Audio chunks as bytes
+        Stream audio via the ElevenLabs streaming endpoint.
+
+        Yields MP3 chunks suitable for a StreamingResponse.
+        Falls back to the mock WAV generator when the key is missing.
         """
-        audio_data = await self.generate_segment_audio(text, voice_id)
-        
-        # Yield in chunks of 4KB
-        chunk_size = 4096
-        for i in range(0, len(audio_data), chunk_size):
-            yield audio_data[i:i + chunk_size]
-    
+        if self._mode == "mock":
+            data = self._generate_mock_audio(text)
+            chunk_size = 4096
+            for i in range(0, len(data), chunk_size):
+                yield data[i : i + chunk_size]
+            return
+
+        try:
+            client = await self._get_client()
+            vid = voice_id or self._voice_id
+
+            async with client.stream(
+                "POST",
+                f"/text-to-speech/{vid}/stream",
+                json=self._voice_body(text),
+            ) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes(chunk_size=4096):
+                    yield chunk
+
+        except Exception as e:
+            print(f"⚠️  ElevenLabs streaming error: {e}")
+            yield self._generate_mock_audio(text)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
     def estimate_duration(self, text: str) -> float:
-        """
-        Estimate audio duration in seconds.
-        
-        Based on average speaking rate of 150 words per minute.
-        """
+        """Estimate audio duration (seconds) at ~150 wpm."""
         words = len(text.split())
         return (words / 150) * 60
-    
+
     def _generate_mock_audio(self, text: str) -> bytes:
-        """
-        Generate a minimal valid WAV file for testing.
-        
-        This creates a tiny silent WAV so the API still works
-        without actual audio generation.
-        """
-        import struct
-        
-        # WAV file parameters
+        """Return a minimal silent WAV so the pipeline never breaks."""
         sample_rate = 22050
         bits_per_sample = 16
         num_channels = 1
-        
-        # Calculate duration based on text
         duration = self.estimate_duration(text)
-        num_samples = int(sample_rate * min(duration, 5))  # Cap at 5 seconds
-        
-        # Generate silent audio data
-        audio_data = b'\x00\x00' * num_samples
-        
-        # Build WAV header
+        num_samples = int(sample_rate * min(duration, 5))
+
+        audio_data = b"\x00\x00" * num_samples
         data_size = len(audio_data)
         file_size = 36 + data_size
-        
+
         wav_header = struct.pack(
-            '<4sI4s4sIHHIIHH4sI',
-            b'RIFF',
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",
             file_size,
-            b'WAVE',
-            b'fmt ',
-            16,  # Subchunk1Size
-            1,   # AudioFormat (PCM)
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
             num_channels,
             sample_rate,
-            sample_rate * num_channels * bits_per_sample // 8,  # ByteRate
-            num_channels * bits_per_sample // 8,  # BlockAlign
+            sample_rate * num_channels * bits_per_sample // 8,
+            num_channels * bits_per_sample // 8,
             bits_per_sample,
-            b'data',
+            b"data",
             data_size,
         )
-        
         return wav_header + audio_data
-    
+
     async def get_available_voices(self) -> list[dict]:
-        """
-        Get list of available voices from the system.
-        
-        Returns:
-            List of voice information dictionaries
-        """
-        self._initialize()
-        if self._engine == "mock":
+        """Fetch the voice catalogue from ElevenLabs (or a mock entry)."""
+        if self._mode == "mock":
             return [
                 {
-                    "voice_id": "default",
-                    "name": "Default Voice",
-                    "description": "System default text-to-speech voice",
+                    "voice_id": "mock",
+                    "name": "Mock Voice",
+                    "description": "Silent placeholder – set ELEVENLABS_API_KEY to enable real voices",
                 }
             ]
-        
+
         try:
-            voices = self._engine.getProperty('voices')
-            
+            client = await self._get_client()
+            resp = await client.get("/voices")
+            resp.raise_for_status()
+            data = resp.json()
             return [
                 {
-                    "voice_id": voice.id,
-                    "name": voice.name,
-                    "description": f"Language: {getattr(voice, 'languages', ['Unknown'])}",
+                    "voice_id": v["voice_id"],
+                    "name": v["name"],
+                    "description": v.get("description", ""),
                 }
-                for voice in voices
+                for v in data.get("voices", [])
             ]
-            
         except Exception as e:
             print(f"Error fetching voices: {e}")
             return []
-    
-    async def save_audio_file(
-        self,
-        audio_data: bytes,
-        file_path: str,
-    ) -> bool:
-        """
-        Save audio data to a file.
-        
-        Args:
-            audio_data: Audio bytes to save
-            file_path: Path to save the file
-            
-        Returns:
-            True if successful
-        """
+
+    async def save_audio_file(self, audio_data: bytes, file_path: str) -> bool:
+        """Persist audio bytes to disk."""
         try:
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
             async with aiofiles.open(file_path, "wb") as f:
                 await f.write(audio_data)
-            
             return True
-            
         except Exception as e:
             print(f"Error saving audio file: {e}")
             return False
+
+    async def close(self):
+        """Shut down the underlying HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
