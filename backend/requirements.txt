@@ -24,7 +24,6 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 colorama==0.4.6
-comtypes==1.4.15
 cryptography==46.0.4
 dataclasses-json==0.6.7
 Deprecated==1.3.1
@@ -111,7 +110,6 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.0.0
 python-jose==3.3.0
 python-multipart==0.0.6
-pyttsx3==2.90
 pywin32==311
 PyYAML==6.0.3
 redis==5.0.1
