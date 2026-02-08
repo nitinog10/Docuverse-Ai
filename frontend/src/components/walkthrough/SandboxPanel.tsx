@@ -138,7 +138,7 @@ export function SandboxPanel() {
               <span>Executing…</span>
             </motion.div>
           )}
-          {error && <div className="text-dv-error">{error}</div>}
+          {error && <div className="text-dv-error">Execution error: {error}</div>}
           {output && (
             <motion.div
               initial={{ opacity: 0, y: 5 }}

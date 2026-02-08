@@ -1,0 +1,41 @@
+# Commands to push to GitHub with new branch
+
+# 1. Check current status
+git status
+
+# 2. Create and switch to new branch
+git checkout -b feature/documentation-and-fixes
+
+# 3. Add all changes
+git add .
+
+# 4. Commit with descriptive message
+git commit -m "feat: Add documentation generation and fix CORS/parser/sandbox issues
+
+- Add comprehensive documentation generation feature
+  - New DocumentationGenerator service to analyze repos
+  - API endpoints for generating/viewing documentation
+  - Frontend page with beautiful UI for repo docs
+  - Shows stats, README, API reference, functions, classes
+
+- Fix CORS errors
+  - Updated CORS middleware with explicit origins
+  - Added expose_headers for better compatibility
+
+- Fix tree-sitter parser
+  - Updated Language initialization for new API
+  - Added proper error handling
+
+- Fix sandbox execution on Windows
+  - Switched from asyncio to subprocess.run
+  - Better error messages and logging
+  - More lenient security patterns
+
+- Add Documentation button to repository page
+- Improve error handling across all services"
+
+# 5. Push to GitHub
+git push -u origin feature/documentation-and-fixes
+
+# 6. After pushing, create a Pull Request on GitHub
+# Go to: https://github.com/YOUR_USERNAME/YOUR_REPO/pull/new/feature/documentation-and-fixes
