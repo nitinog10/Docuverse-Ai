@@ -51,13 +51,18 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     
-    # CORS Configuration
+    # CORS Configuration - Allow frontend to make requests
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_url, "http://localhost:3000"],
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            settings.frontend_url
+        ],
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
     
     # Include API routes

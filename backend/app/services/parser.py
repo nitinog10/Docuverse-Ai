@@ -65,18 +65,28 @@ class ParserService:
             from tree_sitter import Language, Parser
             
             # Initialize parsers for each language
+            # Note: Language() now requires name parameter in newer versions
+            python_lang = Language(tree_sitter_python.language(), "python")
+            python_parser = Parser()
+            python_parser.set_language(python_lang)
             self._parsers["python"] = {
-                "parser": Parser(Language(tree_sitter_python.language())),
+                "parser": python_parser,
                 "queries": self._get_python_queries(),
             }
             
+            js_lang = Language(tree_sitter_javascript.language(), "javascript")
+            js_parser = Parser()
+            js_parser.set_language(js_lang)
             self._parsers["javascript"] = {
-                "parser": Parser(Language(tree_sitter_javascript.language())),
+                "parser": js_parser,
                 "queries": self._get_javascript_queries(),
             }
             
+            ts_lang = Language(tree_sitter_typescript.language_typescript(), "typescript")
+            ts_parser = Parser()
+            ts_parser.set_language(ts_lang)
             self._parsers["typescript"] = {
-                "parser": Parser(Language(tree_sitter_typescript.language_typescript())),
+                "parser": ts_parser,
                 "queries": self._get_typescript_queries(),
             }
             
@@ -84,6 +94,9 @@ class ParserService:
             
         except ImportError as e:
             print(f"Warning: Tree-sitter not fully installed: {e}")
+            self._initialized = True  # Mark as initialized to avoid retry
+        except Exception as e:
+            print(f"Warning: Error initializing tree-sitter parsers: {e}")
             self._initialized = True  # Mark as initialized to avoid retry
     
     def _get_python_queries(self) -> Dict[str, str]:

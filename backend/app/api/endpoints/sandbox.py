@@ -42,22 +42,19 @@ LANGUAGE_CONFIG = {
     },
 }
 
-# Dangerous patterns to block
+# Dangerous patterns to block (more lenient for basic operations)
 DANGEROUS_PATTERNS = [
-    "import os",
     "import subprocess",
     "import sys",
     "__import__",
     "eval(",
     "exec(",
-    "open(",
-    "file(",
-    "require('fs')",
+    "compile(",
     "require('child_process')",
-    "require('os')",
-    "process.env",
     "rm -rf",
     "del /",
+    "rmdir",
+    "unlink",
 ]
 
 
@@ -126,51 +123,70 @@ async def execute_code_async(
     start_time = time.time()
     
     try:
-        # Execute with timeout
-        process = await asyncio.create_subprocess_exec(
-            *config["command"],
-            temp_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        # Windows-compatible subprocess execution
+        print(f"[SANDBOX] Command: {config['command']}, File: {temp_path}")
         
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=config["timeout"]
-            )
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-            return SandboxExecutionResult(
-                success=False,
-                output="",
-                error=f"Execution timed out after {config['timeout']} seconds",
-                execution_time=config["timeout"] * 1000,
-            )
+        # Use subprocess.run instead of asyncio for Windows compatibility
+        import subprocess
+        
+        result = subprocess.run(
+            [*config["command"], temp_path],
+            capture_output=True,
+            timeout=config["timeout"],
+            text=True,
+            env=os.environ.copy(),
+        )
         
         execution_time = (time.time() - start_time) * 1000  # Convert to ms
         
-        if process.returncode == 0:
+        stdout_text = result.stdout.strip()
+        stderr_text = result.stderr.strip()
+        
+        print(f"[SANDBOX] Return code: {result.returncode}")
+        print(f"[SANDBOX] stdout: {stdout_text[:200]}")
+        print(f"[SANDBOX] stderr: {stderr_text[:200]}")
+        
+        # Consider it successful if returncode is 0
+        if result.returncode == 0:
             return SandboxExecutionResult(
                 success=True,
-                output=stdout.decode("utf-8", errors="replace"),
-                error=None,
+                output=stdout_text if stdout_text else "(no output)",
+                error=stderr_text if stderr_text else None,
                 execution_time=execution_time,
             )
         else:
             return SandboxExecutionResult(
                 success=False,
-                output=stdout.decode("utf-8", errors="replace"),
-                error=stderr.decode("utf-8", errors="replace"),
+                output=stdout_text,
+                error=stderr_text if stderr_text else f"Process exited with code {result.returncode}",
                 execution_time=execution_time,
             )
             
-    except Exception as e:
+    except subprocess.TimeoutExpired:
+        print(f"[SANDBOX] Timeout!")
         return SandboxExecutionResult(
             success=False,
             output="",
-            error=str(e),
+            error=f"Execution timed out after {config['timeout']} seconds",
+            execution_time=config["timeout"] * 1000,
+        )
+    except FileNotFoundError as e:
+        print(f"[SANDBOX] FileNotFoundError: {e}")
+        return SandboxExecutionResult(
+            success=False,
+            output="",
+            error=f"Runtime not found: {config['command'][0]} is not installed or not in PATH",
+            execution_time=(time.time() - start_time) * 1000,
+        )
+    except Exception as e:
+        print(f"[SANDBOX] Exception type: {type(e).__name__}")
+        print(f"[SANDBOX] Exception message: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return SandboxExecutionResult(
+            success=False,
+            output="",
+            error=f"{type(e).__name__}: {str(e) if str(e) else 'Unknown error'}",
             execution_time=(time.time() - start_time) * 1000,
         )
     finally:
@@ -198,11 +214,17 @@ async def execute_code(
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    print(f"[SANDBOX] Executing {request.language} code:")
+    print(f"[SANDBOX] Code: {request.code[:100]}...")
+    print(f"[SANDBOX] Variables: {request.variables}")
+    
     result = await execute_code_async(
         code=request.code,
         language=request.language,
         variables=request.variables,
     )
+    
+    print(f"[SANDBOX] Result - Success: {result.success}, Output: {result.output[:100] if result.output else 'None'}, Error: {result.error}")
     
     return result
 
@@ -250,4 +272,3 @@ async def validate_code(
         success=True,
         message="Code is valid and safe to execute",
     )
-
