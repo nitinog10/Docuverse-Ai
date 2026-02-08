@@ -21,11 +21,13 @@ import {
   Folder,
   Sparkles,
   AlertCircle,
+  BookOpen,
 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { repositories, files, FileNode, Repository } from '@/lib/api'
 import { formatRelativeTime, getLanguageFromPath } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import DocumentationPanel from '@/components/documentation/DocumentationPanel'
 
 export default function RepositoryPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -36,6 +38,7 @@ export default function RepositoryPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState<string | null>(null)
   const [isReindexing, setIsReindexing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [activeTab, setActiveTab] = useState<'files' | 'documentation'>('files')
 
   const fetchData = useCallback(async () => {
     setIsLoading(true)
@@ -224,6 +227,35 @@ export default function RepositoryPage({ params }: { params: { id: string } }) {
             </div>
           </div>
 
+          {/* Tab switcher */}
+          <div className="flex items-center gap-1 bg-dv-surface rounded-xl p-1 mb-6 w-fit">
+            <button
+              onClick={() => setActiveTab('files')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'files'
+                  ? 'bg-dv-accent text-white'
+                  : 'text-dv-text-muted hover:text-dv-text hover:bg-dv-elevated/60'
+              }`}
+            >
+              <FileCode className="w-4 h-4" />
+              Files
+            </button>
+            <button
+              onClick={() => setActiveTab('documentation')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'documentation'
+                  ? 'bg-dv-accent text-white'
+                  : 'text-dv-text-muted hover:text-dv-text hover:bg-dv-elevated/60'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              Documentation
+            </button>
+          </div>
+
+          {activeTab === 'documentation' ? (
+            <DocumentationPanel repoId={params.id} />
+          ) : (
           <div className="grid lg:grid-cols-3 gap-6">
             {/* File list */}
             <div className="lg:col-span-2">
@@ -300,6 +332,14 @@ export default function RepositoryPage({ params }: { params: { id: string } }) {
                     {isReindexing ? <Loader2 className="w-4 h-4 animate-spin text-dv-text-muted" /> : <RefreshCw className="w-4 h-4 text-dv-text-muted" />}
                     <span className="text-sm">Re-index Repository</span>
                   </button>
+                  <button
+                    onClick={() => setActiveTab('documentation')}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-dv-elevated/50 hover:bg-dv-elevated transition-colors w-full text-left group"
+                  >
+                    <BookOpen className="w-4 h-4 text-dv-purple" />
+                    <span className="text-sm">View Documentation</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-dv-text-muted ml-auto group-hover:translate-x-0.5 transition-transform" />
+                  </button>
                 </div>
               </div>
 
@@ -321,6 +361,7 @@ export default function RepositoryPage({ params }: { params: { id: string } }) {
               </div>
             </div>
           </div>
+          )}
         </div>
       </main>
     </div>

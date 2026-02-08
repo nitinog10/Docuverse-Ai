@@ -326,6 +326,47 @@ export const sandbox = {
     }),
 }
 
+// ============================================================
+// Documentation
+// ============================================================
+
+export interface DocSection {
+  title: string
+  content: string
+}
+
+export interface FileDocumentation {
+  path: string
+  language: string
+  summary: string
+  sections: DocSection[]
+}
+
+export interface RepositoryDocumentation {
+  overview: string
+  architecture: string
+  folder_tree: string
+  files: FileDocumentation[]
+  dependencies: string
+}
+
+export const documentation = {
+  generate: (repoId: string) =>
+    request<{ status: string; message: string }>(`/documentation/${repoId}/generate`, {
+      method: 'POST',
+    }),
+
+  get: (repoId: string) =>
+    request<{ status: string; data?: RepositoryDocumentation | null }>(
+      `/documentation/${repoId}`
+    ),
+
+  getFile: (repoId: string, filePath: string) =>
+    request<{ status: string; data: FileDocumentation }>(
+      `/documentation/${repoId}/file?path=${encodeURIComponent(filePath)}`
+    ),
+}
+
 // Export all APIs
 export const api = {
   auth,
@@ -334,6 +375,7 @@ export const api = {
   walkthroughs,
   diagrams,
   sandbox,
+  documentation,
 }
 
 export default api
