@@ -153,10 +153,6 @@ export default function RepositoryPage({ params }: { params: { id: string } }) {
               <Play className="w-3.5 h-3.5" />
               Walkthrough
             </Link>
-            <Link href={`/repository/${params.id}/documentation`} className="btn-secondary flex items-center gap-2">
-              <FileCode className="w-3.5 h-3.5" />
-              Documentation
-            </Link>
           </div>
         </div>
 

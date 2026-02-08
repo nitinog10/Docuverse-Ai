@@ -4,7 +4,7 @@ Main API Router - Combines all route modules
 
 from fastapi import APIRouter
 
-from app.api.endpoints import auth, repositories, files, walkthroughs, diagrams, sandbox, documentation
+from app.api.endpoints import auth, repositories, files, walkthroughs, diagrams, sandbox
 
 router = APIRouter()
 
@@ -43,11 +43,5 @@ router.include_router(
     sandbox.router,
     prefix="/sandbox",
     tags=["Sandbox"]
-)
-
-router.include_router(
-    documentation.router,
-    prefix="/documentation",
-    tags=["Documentation"]
 )
 

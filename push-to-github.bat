@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Pushing to GitHub with new branch
+echo Pushing fixes to GitHub
 echo ========================================
 echo.
 
@@ -8,8 +8,8 @@ echo Step 1: Checking current status...
 git status
 echo.
 
-echo Step 2: Creating new branch 'feature/documentation-and-fixes'...
-git checkout -b feature/documentation-and-fixes
+echo Step 2: Creating new branch 'fix/cors-parser-sandbox'...
+git checkout -b fix/cors-parser-sandbox
 echo.
 
 echo Step 3: Adding all changes...
@@ -17,11 +17,11 @@ git add .
 echo.
 
 echo Step 4: Committing changes...
-git commit -m "feat: Add documentation generation and fix CORS/parser/sandbox issues" -m "- Add comprehensive documentation generation feature" -m "  - New DocumentationGenerator service to analyze repos" -m "  - API endpoints for generating/viewing documentation" -m "  - Frontend page with beautiful UI for repo docs" -m "  - Shows stats, README, API reference, functions, classes" -m "" -m "- Fix CORS errors" -m "  - Updated CORS middleware with explicit origins" -m "  - Added expose_headers for better compatibility" -m "" -m "- Fix tree-sitter parser" -m "  - Updated Language initialization for new API" -m "  - Added proper error handling" -m "" -m "- Fix sandbox execution on Windows" -m "  - Switched from asyncio to subprocess.run" -m "  - Better error messages and logging" -m "  - More lenient security patterns" -m "" -m "- Add Documentation button to repository page" -m "- Improve error handling across all services"
+git commit -m "fix: CORS, tree-sitter parser, and sandbox execution issues" -m "- Fix CORS errors" -m "  - Updated CORS middleware with explicit origins" -m "  - Added expose_headers for better compatibility" -m "  - Support both localhost and 127.0.0.1" -m "" -m "- Fix tree-sitter parser" -m "  - Updated Language initialization for new tree-sitter API" -m "  - Use set_language() method instead of passing to Parser" -m "  - Added proper error handling" -m "" -m "- Fix sandbox execution on Windows" -m "  - Switched from asyncio.create_subprocess_exec to subprocess.run" -m "  - Resolves NotImplementedError on Windows" -m "  - Better error messages and logging" -m "  - More lenient security patterns (allow basic file operations)" -m "" -m "- Improve error handling and logging across services"
 echo.
 
 echo Step 5: Pushing to GitHub...
-git push -u origin feature/documentation-and-fixes
+git push -u origin fix/cors-parser-sandbox
 echo.
 
 echo ========================================
