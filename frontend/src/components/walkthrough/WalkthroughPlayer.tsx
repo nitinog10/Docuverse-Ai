@@ -13,10 +13,15 @@ import {
   Maximize2,
   MessageSquare,
   Clock,
+  Loader2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface ScriptSegment {
   id: string
@@ -38,6 +43,12 @@ interface WalkthroughScript {
   segments: ScriptSegment[]
 }
 
+/** Mirrors backend AudioSegment – handles both camelCase and snake_case. */
+interface AudioSegmentTiming {
+  startTime: number
+  endTime: number
+}
+
 interface WalkthroughPlayerProps {
   code: string
   script: WalkthroughScript
@@ -46,6 +57,27 @@ interface WalkthroughPlayerProps {
   onPlayingChange: (playing: boolean) => void
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('token')
+}
+
+/** Normalise an audio‐segment object coming from the API (snake or camel). */
+function normaliseSegmentTiming(raw: any): AudioSegmentTiming {
+  return {
+    startTime: raw.startTime ?? raw.start_time ?? 0,
+    endTime: raw.endTime ?? raw.end_time ?? 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function WalkthroughPlayer({
   code,
   script,
@@ -53,121 +85,242 @@ export function WalkthroughPlayer({
   isPlaying,
   onPlayingChange,
 }: WalkthroughPlayerProps) {
+  // ── State ──────────────────────────────────────────────────────────────
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0)
   const [segmentProgress, setSegmentProgress] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showTranscript, setShowTranscript] = useState(true)
-  const [audioLoaded, setAudioLoaded] = useState(false)
+
+  // Audio pipeline state
+  const [audioReady, setAudioReady] = useState(false)
+  const [audioLoading, setAudioLoading] = useState(true)
   const [audioError, setAudioError] = useState<string | null>(null)
-  const [useTTS, setUseTTS] = useState(true) // Use browser TTS
-  
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null)
+  const [segmentTimings, setSegmentTimings] = useState<AudioSegmentTiming[]>([])
+  const [displayTime, setDisplayTime] = useState(0)
+
+  // Fallback: browser SpeechSynthesis when backend audio is unavailable
+  const [useBrowserTTS, setUseBrowserTTS] = useState(false)
+
+  // ── Refs ────────────────────────────────────────────────────────────────
   const codeContainerRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null)
   const currentSegmentIndexRef = useRef(currentSegmentIndex)
   const onPlayingChangeRef = useRef(onPlayingChange)
 
-  // Keep refs in sync
   useEffect(() => { currentSegmentIndexRef.current = currentSegmentIndex }, [currentSegmentIndex])
   useEffect(() => { onPlayingChangeRef.current = onPlayingChange }, [onPlayingChange])
 
-  // Clamp index to valid bounds
+  // ── Derived ─────────────────────────────────────────────────────────────
   const safeIndex = Math.min(currentSegmentIndex, Math.max(script.segments.length - 1, 0))
   const currentSegment = script.segments.length > 0 ? script.segments[safeIndex] : undefined
   const lines = code.split('\n')
 
-  // Initialize speech synthesis
+  // ── Poll for ElevenLabs audio readiness ─────────────────────────────────
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      speechSynthRef.current = new SpeechSynthesisUtterance()
-      speechSynthRef.current.rate = playbackSpeed
-      speechSynthRef.current.volume = isMuted ? 0 : 1
-      
-      // Set up event handlers
-      speechSynthRef.current.onend = () => {
-        // Move to next segment when speech ends (read from refs to avoid stale closure)
-        const idx = currentSegmentIndexRef.current
-        if (idx < script.segments.length - 1) {
-          setCurrentSegmentIndex((prev) => Math.min(prev + 1, script.segments.length - 1))
-          setSegmentProgress(0)
-        } else {
-          onPlayingChangeRef.current(false)
-          setSegmentProgress(100)
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let pollInterval = 2000 // start at 2s, back off gradually
+
+    const fetchAudio = async () => {
+      const token = getAuthToken()
+      if (!token) {
+        setAudioError('Not authenticated')
+        setAudioLoading(false)
+        setUseBrowserTTS(true)
+        return
+      }
+
+      try {
+        // 1. Check if the backend has finished generating audio
+        const metaRes = await fetch(
+          `${API_BASE_URL}/walkthroughs/${script.id}/audio`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        )
+
+        if (metaRes.status === 202) {
+          // Audio still generating – poll again with backoff (max 6s)
+          pollInterval = Math.min(pollInterval + 1000, 6000)
+          if (!cancelled) pollTimer = setTimeout(fetchAudio, pollInterval)
+          return
+        }
+        if (!metaRes.ok) throw new Error('Failed to fetch audio metadata')
+
+        const meta = await metaRes.json()
+        if (cancelled) return
+
+        // Normalise timings (handles both snake_case and camelCase)
+        const timings: AudioSegmentTiming[] = (
+          meta.audioSegments ?? meta.audio_segments ?? []
+        ).map(normaliseSegmentTiming)
+        setSegmentTimings(timings)
+
+        // 2. Fetch the actual audio stream as a blob
+        const streamRes = await fetch(
+          `${API_BASE_URL}/walkthroughs/${script.id}/audio/stream`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        )
+        if (!streamRes.ok) throw new Error('Failed to fetch audio stream')
+
+        const blob = await streamRes.blob()
+        if (cancelled) return
+
+        const url = URL.createObjectURL(blob)
+        setAudioBlobUrl(url)
+        setAudioReady(true)
+        setAudioLoading(false)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Audio fetch error:', err)
+          setAudioError(err instanceof Error ? err.message : 'Audio unavailable')
+          setAudioLoading(false)
+          setUseBrowserTTS(true) // fallback
         }
       }
-      
-      speechSynthRef.current.onerror = (event) => {
-        console.error('Speech synthesis error:', event)
-        setAudioError('Speech synthesis failed')
-      }
     }
-    
+
+    fetchAudio()
     return () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [script.id])
+
+  // Clean up blob URL on unmount
+  useEffect(() => {
+    return () => { if (audioBlobUrl) URL.revokeObjectURL(audioBlobUrl) }
+  }, [audioBlobUrl])
+
+  // ── Browser TTS fallback initialisation ─────────────────────────────────
+  useEffect(() => {
+    if (!useBrowserTTS) return
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+
+    speechSynthRef.current = new SpeechSynthesisUtterance()
+    speechSynthRef.current.rate = playbackSpeed
+    speechSynthRef.current.volume = isMuted ? 0 : 1
+
+    speechSynthRef.current.onend = () => {
+      const idx = currentSegmentIndexRef.current
+      if (idx < script.segments.length - 1) {
+        setCurrentSegmentIndex((prev) => Math.min(prev + 1, script.segments.length - 1))
+        setSegmentProgress(0)
+      } else {
+        onPlayingChangeRef.current(false)
+        setSegmentProgress(100)
       }
     }
-  }, [])
 
-  // Update speech rate when playback speed changes
-  useEffect(() => {
-    if (speechSynthRef.current) {
-      speechSynthRef.current.rate = playbackSpeed
-    }
-  }, [playbackSpeed])
+    return () => { window.speechSynthesis.cancel() }
+  }, [useBrowserTTS])
 
-  // Update speech volume when muted state changes
+  // ── Sync audio element ↔ play state ─────────────────────────────────────
   useEffect(() => {
-    if (speechSynthRef.current) {
-      speechSynthRef.current.volume = isMuted ? 0 : 1
-    }
-  }, [isMuted])
-
-  // Handle play/pause with speech synthesis
-  useEffect(() => {
-    if (!currentSegment || !useTTS) return
-    
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setAudioError('Speech synthesis not supported in this browser')
+    // ElevenLabs path
+    if (audioReady && audioRef.current && !useBrowserTTS) {
+      if (isPlaying) audioRef.current.play().catch(console.error)
+      else audioRef.current.pause()
       return
     }
 
-    if (isPlaying) {
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel()
-      
-      // Speak current segment
-      if (speechSynthRef.current) {
-        speechSynthRef.current.text = currentSegment.text
-        speechSynthRef.current.rate = playbackSpeed
-        speechSynthRef.current.volume = isMuted ? 0 : 1
-        window.speechSynthesis.speak(speechSynthRef.current)
+    // Browser TTS fallback path
+    if (useBrowserTTS && currentSegment) {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+      if (isPlaying) {
+        window.speechSynthesis.cancel()
+        if (speechSynthRef.current) {
+          speechSynthRef.current.text = currentSegment.text
+          speechSynthRef.current.rate = playbackSpeed
+          speechSynthRef.current.volume = isMuted ? 0 : 1
+          window.speechSynthesis.speak(speechSynthRef.current)
+        }
+      } else {
+        window.speechSynthesis.cancel()
       }
-    } else {
-      window.speechSynthesis.cancel()
     }
-  }, [isPlaying, currentSegmentIndex, currentSegment, useTTS])
+  }, [isPlaying, audioReady, useBrowserTTS, currentSegmentIndex, currentSegment, playbackSpeed, isMuted])
 
-  // Calculate total progress
+  // ── Sync playback speed / mute with <audio> ────────────────────────────
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackSpeed
+    if (speechSynthRef.current) speechSynthRef.current.rate = playbackSpeed
+  }, [playbackSpeed])
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = isMuted
+    if (speechSynthRef.current) speechSynthRef.current.volume = isMuted ? 0 : 1
+  }, [isMuted])
+
+  // ── Audio timeupdate → segment sync ─────────────────────────────────────
+  const handleTimeUpdate = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio || segmentTimings.length === 0) return
+
+    const t = audio.currentTime
+    setDisplayTime(t)
+
+    for (let i = 0; i < segmentTimings.length; i++) {
+      const seg = segmentTimings[i]
+      if (t >= seg.startTime && t < seg.endTime) {
+        setCurrentSegmentIndex(i)
+        const dur = seg.endTime - seg.startTime
+        setSegmentProgress(dur > 0 ? ((t - seg.startTime) / dur) * 100 : 0)
+        return
+      }
+    }
+
+    // Past all segments
+    const last = segmentTimings[segmentTimings.length - 1]
+    if (last && t >= last.endTime) {
+      setCurrentSegmentIndex(segmentTimings.length - 1)
+      setSegmentProgress(100)
+    }
+  }, [segmentTimings])
+
+  const handleAudioEnded = useCallback(() => {
+    onPlayingChange(false)
+    setSegmentProgress(100)
+  }, [onPlayingChange])
+
+  // ── Browser TTS progress timer (fallback only) ─────────────────────────
+  useEffect(() => {
+    if (!useBrowserTTS || !isPlaying || !currentSegment) return
+
+    const duration = (currentSegment.durationEstimate * 1000) / playbackSpeed
+    const interval = duration / 100
+    const timer = setInterval(() => {
+      setSegmentProgress((prev) => (prev >= 100 ? 100 : prev + 1))
+    }, interval)
+
+    return () => clearInterval(timer)
+  }, [useBrowserTTS, isPlaying, currentSegmentIndex, playbackSpeed, currentSegment])
+
+  // ── Progress / time computation ─────────────────────────────────────────
+  const audioDuration = audioRef.current?.duration || script.totalDuration
+
   const totalProgress = (() => {
+    if (audioReady && audioRef.current && audioRef.current.duration) {
+      return (displayTime / audioRef.current.duration) * 100
+    }
+    // Fallback estimate
     if (!currentSegment || !script.segments.length) return 0
     const completedDuration = script.segments
       .slice(0, currentSegmentIndex)
       .reduce((sum, seg) => sum + seg.durationEstimate, 0)
     const currentDuration = currentSegment.durationEstimate * (segmentProgress / 100)
-    return script.totalDuration > 0 
-      ? ((completedDuration + currentDuration) / script.totalDuration) * 100 
+    return script.totalDuration > 0
+      ? ((completedDuration + currentDuration) / script.totalDuration) * 100
       : 0
   })()
 
-  // Auto-scroll to highlighted lines
+  // ── Auto-scroll code viewer ─────────────────────────────────────────────
   useEffect(() => {
     if (codeContainerRef.current && currentSegment) {
       const targetLine = currentSegment.startLine
-      const lineHeight = 28 // Approximate line height in pixels
-      const scrollTarget = (targetLine - 5) * lineHeight // 5 lines offset
-      
+      const lineHeight = 28
+      const scrollTarget = (targetLine - 5) * lineHeight
       codeContainerRef.current.scrollTo({
         top: Math.max(0, scrollTarget),
         behavior: 'smooth',
@@ -175,64 +328,59 @@ export function WalkthroughPlayer({
     }
   }, [currentSegment])
 
-  // Progress tracking for visual feedback
-  useEffect(() => {
-    if (!isPlaying || !currentSegment) return
-
-    const duration = (currentSegment.durationEstimate * 1000) / playbackSpeed
-    const interval = duration / 100
-
-    const timer = setInterval(() => {
-      setSegmentProgress((prev) => {
-        if (prev >= 100) {
-          return 100
-        }
-        return prev + 1
-      })
-    }, interval)
-
-    return () => clearInterval(timer)
-  }, [isPlaying, currentSegmentIndex, playbackSpeed, currentSegment])
-
+  // ── Handlers ────────────────────────────────────────────────────────────
   const handleSkipBack = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    if (useBrowserTTS && typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
     if (currentSegmentIndex > 0) {
-      setCurrentSegmentIndex((idx) => idx - 1)
+      const prevIdx = currentSegmentIndex - 1
+      if (audioReady && audioRef.current && segmentTimings[prevIdx]) {
+        audioRef.current.currentTime = segmentTimings[prevIdx].startTime
+      }
+      setCurrentSegmentIndex(prevIdx)
       setSegmentProgress(0)
     }
   }
 
   const handleSkipForward = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    if (useBrowserTTS && typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
     if (currentSegmentIndex < script.segments.length - 1) {
-      setCurrentSegmentIndex((idx) => idx + 1)
+      const nextIdx = currentSegmentIndex + 1
+      if (audioReady && audioRef.current && segmentTimings[nextIdx]) {
+        audioRef.current.currentTime = segmentTimings[nextIdx].startTime
+      }
+      setCurrentSegmentIndex(nextIdx)
       setSegmentProgress(0)
     }
   }
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    if (useBrowserTTS && typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
-    
+
     const rect = e.currentTarget.getBoundingClientRect()
-    const percentage = ((e.clientX - rect.left) / rect.width) * 100
-    
-    // Find which segment this corresponds to
+    const percentage = (e.clientX - rect.left) / rect.width
+
+    if (audioReady && audioRef.current && audioRef.current.duration) {
+      audioRef.current.currentTime = percentage * audioRef.current.duration
+      return
+    }
+
+    // Fallback: estimate segment from percentage
     let accumulatedDuration = 0
     for (let i = 0; i < script.segments.length; i++) {
-      const segmentPercentage = (script.segments[i].durationEstimate / script.totalDuration) * 100
-      if (accumulatedDuration + segmentPercentage >= percentage) {
+      const segPct = (script.segments[i].durationEstimate / script.totalDuration) * 100
+      if ((accumulatedDuration + segPct) >= percentage * 100) {
         setCurrentSegmentIndex(i)
-        const withinSegment = ((percentage - accumulatedDuration) / segmentPercentage) * 100
-        setSegmentProgress(Math.max(0, Math.min(100, withinSegment)))
+        const within = ((percentage * 100 - accumulatedDuration) / segPct) * 100
+        setSegmentProgress(Math.max(0, Math.min(100, within)))
         break
       }
-      accumulatedDuration += segmentPercentage
+      accumulatedDuration += segPct
     }
   }
 
@@ -243,15 +391,40 @@ export function WalkthroughPlayer({
   }
 
   const currentTime = (() => {
+    if (audioReady && displayTime > 0) return displayTime
     if (!currentSegment || !script.segments.length) return 0
-    const completedDuration = script.segments
+    const completed = script.segments
       .slice(0, currentSegmentIndex)
       .reduce((sum, seg) => sum + seg.durationEstimate, 0)
-    return completedDuration + (currentSegment.durationEstimate * (segmentProgress / 100))
+    return completed + (currentSegment.durationEstimate * (segmentProgress / 100))
   })()
 
   return (
     <div className="h-full flex flex-col">
+      {/* Hidden <audio> element – drives ElevenLabs playback */}
+      {audioBlobUrl && (
+        <audio
+          ref={audioRef}
+          src={audioBlobUrl}
+          preload="auto"
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleAudioEnded}
+        />
+      )}
+
+      {/* Audio loading banner */}
+      {audioLoading && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-dv-accent/10 border-b border-dv-border text-sm text-dv-accent">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Generating ElevenLabs audio…
+        </div>
+      )}
+      {audioError && !audioReady && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-dv-warning/10 border-b border-dv-border text-sm text-dv-warning">
+          {useBrowserTTS ? 'Using browser voice (ElevenLabs unavailable)' : audioError}
+        </div>
+      )}
+
       {/* Code viewer */}
       <div
         ref={codeContainerRef}
@@ -374,7 +547,7 @@ export function WalkthroughPlayer({
             <div className="flex items-center gap-2 text-sm">
               <span className="text-dv-text">{formatTime(currentTime)}</span>
               <span className="text-dv-text-muted">/</span>
-              <span className="text-dv-text-muted">{formatTime(script.totalDuration)}</span>
+              <span className="text-dv-text-muted">{formatTime(audioDuration)}</span>
             </div>
           </div>
 
