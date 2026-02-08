@@ -1,11 +1,16 @@
-"""
-Audio Generator Service - ElevenLabs Text-to-Speech Integration
+"""Audio Generator Service – Text-to-Speech
 
-Converts walkthrough scripts into high-quality AI voice narration
-using the ElevenLabs API.  Falls back to silent mock audio when
-the API key is not configured.
+Converts walkthrough scripts into AI voice narration.
+
+Priority chain:
+  1. **ElevenLabs** (set ELEVENLABS_API_KEY) – premium quality.
+  2. **Edge-TTS** (free, no key needed) – Microsoft Edge online TTS, produces MP3.
+
+Both paths return MP3 bytes, so the rest of the pipeline can treat all
+audio uniformly.
 """
 
+import io
 import os
 import struct
 from typing import Optional, AsyncIterator
@@ -19,31 +24,28 @@ settings = get_settings()
 
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
+# Edge-TTS voice to use when ElevenLabs is unavailable
+EDGE_TTS_VOICE = "en-US-GuyNeural"
+
 
 class AudioGeneratorService:
-    """
-    ElevenLabs-powered audio synthesis service.
-
-    Converts text scripts into natural-sounding speech via the
-    ElevenLabs REST API (MP3).  When the API key is absent the
-    service falls back to a tiny silent WAV so the rest of the
-    pipeline keeps working.
-    """
+    """Text-to-speech service with ElevenLabs → Edge-TTS fallback."""
 
     def __init__(self):
         self._api_key: str = settings.elevenlabs_api_key
         self._voice_id: str = settings.elevenlabs_voice_id
         self._model_id: str = settings.elevenlabs_model_id
         self._client: Optional[httpx.AsyncClient] = None
-        self._mode: str = "elevenlabs" if self._api_key else "mock"
 
-        if self._mode == "mock":
-            print("⚠️  ELEVENLABS_API_KEY not set – using silent mock audio")
-        else:
+        if self._api_key:
+            self._mode = "elevenlabs"
             print(f"✅ ElevenLabs TTS ready  (voice={self._voice_id}, model={self._model_id})")
+        else:
+            self._mode = "edge-tts"
+            print(f"ℹ️  ELEVENLABS_API_KEY not set – using free Edge-TTS (voice={EDGE_TTS_VOICE})")
 
     # ------------------------------------------------------------------
-    # HTTP client (lazy, reusable)
+    # HTTP client (lazy, reusable) – ElevenLabs only
     # ------------------------------------------------------------------
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -59,7 +61,6 @@ class AudioGeneratorService:
         return self._client
 
     def _voice_body(self, text: str) -> dict:
-        """Build the JSON payload shared by generate / stream calls."""
         return {
             "text": text,
             "model_id": self._model_id,
@@ -72,6 +73,21 @@ class AudioGeneratorService:
         }
 
     # ------------------------------------------------------------------
+    # Edge-TTS helper (free fallback)
+    # ------------------------------------------------------------------
+
+    async def _generate_edge_tts(self, text: str) -> bytes:
+        """Generate MP3 bytes via Microsoft Edge-TTS (free, no key)."""
+        import edge_tts
+
+        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
+        buf = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                buf.write(chunk["data"])
+        return buf.getvalue()
+
+    # ------------------------------------------------------------------
     # Core generation
     # ------------------------------------------------------------------
 
@@ -80,35 +96,38 @@ class AudioGeneratorService:
         text: str,
         voice_id: Optional[str] = None,
     ) -> bytes:
-        """
-        Generate audio for a single text segment.
+        """Generate MP3 audio for a single text segment."""
+        if self._mode == "edge-tts":
+            try:
+                return await self._generate_edge_tts(text)
+            except Exception as e:
+                print(f"⚠️  Edge-TTS error: {e}")
+                return b""  # empty fallback; browser TTS will kick in
 
-        Returns MP3 bytes (ElevenLabs) or WAV bytes (mock).
-        """
-        if self._mode == "mock":
-            return self._generate_mock_audio(text)
-
+        # ElevenLabs path
         try:
             client = await self._get_client()
             vid = voice_id or self._voice_id
-
             resp = await client.post(
                 f"/text-to-speech/{vid}",
                 json=self._voice_body(text),
             )
             resp.raise_for_status()
             return resp.content
-
         except Exception as e:
-            print(f"⚠️  ElevenLabs API error: {e}")
-            return self._generate_mock_audio(text)
+            print(f"⚠️  ElevenLabs API error, falling back to Edge-TTS: {e}")
+            try:
+                return await self._generate_edge_tts(text)
+            except Exception as e2:
+                print(f"⚠️  Edge-TTS also failed: {e2}")
+                return b""
 
     async def generate_full_audio(
         self,
         segments: list[str],
         voice_id: Optional[str] = None,
     ) -> bytes:
-        """Generate and concatenate audio for multiple text segments."""
+        """Generate and concatenate MP3 audio for multiple text segments."""
         chunks: list[bytes] = []
         for text in segments:
             chunk = await self.generate_segment_audio(text, voice_id)
@@ -120,14 +139,9 @@ class AudioGeneratorService:
         text: str,
         voice_id: Optional[str] = None,
     ) -> AsyncIterator[bytes]:
-        """
-        Stream audio via the ElevenLabs streaming endpoint.
-
-        Yields MP3 chunks suitable for a StreamingResponse.
-        Falls back to the mock WAV generator when the key is missing.
-        """
-        if self._mode == "mock":
-            data = self._generate_mock_audio(text)
+        """Yield MP3 chunks for a StreamingResponse."""
+        if self._mode == "edge-tts":
+            data = await self._generate_edge_tts(text)
             chunk_size = 4096
             for i in range(0, len(data), chunk_size):
                 yield data[i : i + chunk_size]
@@ -136,7 +150,6 @@ class AudioGeneratorService:
         try:
             client = await self._get_client()
             vid = voice_id or self._voice_id
-
             async with client.stream(
                 "POST",
                 f"/text-to-speech/{vid}/stream",
@@ -145,10 +158,10 @@ class AudioGeneratorService:
                 resp.raise_for_status()
                 async for chunk in resp.aiter_bytes(chunk_size=4096):
                     yield chunk
-
         except Exception as e:
-            print(f"⚠️  ElevenLabs streaming error: {e}")
-            yield self._generate_mock_audio(text)
+            print(f"⚠️  ElevenLabs streaming error, falling back to Edge-TTS: {e}")
+            data = await self._generate_edge_tts(text)
+            yield data
 
     # ------------------------------------------------------------------
     # Helpers
@@ -159,44 +172,14 @@ class AudioGeneratorService:
         words = len(text.split())
         return (words / 150) * 60
 
-    def _generate_mock_audio(self, text: str) -> bytes:
-        """Return a minimal silent WAV so the pipeline never breaks."""
-        sample_rate = 22050
-        bits_per_sample = 16
-        num_channels = 1
-        duration = self.estimate_duration(text)
-        num_samples = int(sample_rate * min(duration, 5))
-
-        audio_data = b"\x00\x00" * num_samples
-        data_size = len(audio_data)
-        file_size = 36 + data_size
-
-        wav_header = struct.pack(
-            "<4sI4s4sIHHIIHH4sI",
-            b"RIFF",
-            file_size,
-            b"WAVE",
-            b"fmt ",
-            16,
-            1,
-            num_channels,
-            sample_rate,
-            sample_rate * num_channels * bits_per_sample // 8,
-            num_channels * bits_per_sample // 8,
-            bits_per_sample,
-            b"data",
-            data_size,
-        )
-        return wav_header + audio_data
-
     async def get_available_voices(self) -> list[dict]:
-        """Fetch the voice catalogue from ElevenLabs (or a mock entry)."""
-        if self._mode == "mock":
+        """Fetch the voice catalogue from ElevenLabs (or an Edge-TTS entry)."""
+        if self._mode == "edge-tts":
             return [
                 {
-                    "voice_id": "mock",
-                    "name": "Mock Voice",
-                    "description": "Silent placeholder – set ELEVENLABS_API_KEY to enable real voices",
+                    "voice_id": EDGE_TTS_VOICE,
+                    "name": "Edge-TTS (free)",
+                    "description": f"Microsoft Edge neural voice ({EDGE_TTS_VOICE}) – set ELEVENLABS_API_KEY for premium voices",
                 }
             ]
 

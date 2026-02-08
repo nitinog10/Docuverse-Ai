@@ -207,7 +207,7 @@ Rules:
 - End with a **Notes / Edge Cases** section if relevant.
 - Be concise but thorough. Use professional tone.
 
-{"AST Structure:\n" + ast_summary if ast_summary else ""}
+{("AST Structure:" + chr(10) + ast_summary) if ast_summary else ""}
 
 Source code:
 ```{lang or ''}
