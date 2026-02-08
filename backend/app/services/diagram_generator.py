@@ -144,53 +144,109 @@ class DiagramGeneratorService:
         file_path: str,
         ast_nodes: List[ASTNode],
     ) -> str:
-        """Generate a flowchart showing code flow"""
+        """Generate a strictly vertical flowchart — every node chains to one node below."""
         file_name = os.path.basename(file_path)
         sanitized_name = self._sanitize_id(file_name)
-        
+        used_ids: Set[str] = {sanitized_name}  # Track used IDs to avoid duplicates
+
+        def unique_id(base: str) -> str:
+            """Return a unique ID, appending _2, _3, etc. if needed."""
+            candidate = base
+            counter = 2
+            while candidate in used_ids:
+                candidate = f"{base}_{counter}"
+                counter += 1
+            used_ids.add(candidate)
+            return candidate
+
         lines = ["flowchart TD"]
-        
-        # Add file as root node
-        lines.append(f"    {sanitized_name}[{file_name}]")
-        
-        # Group nodes by type
+        styles: List[str] = []  # Collect style entries as nodes are generated
+
         classes = [n for n in ast_nodes if n.type == NodeType.CLASS]
         functions = [n for n in ast_nodes if n.type == NodeType.FUNCTION]
-        
-        # Add classes
-        for cls in classes:
-            cls_id = self._sanitize_id(cls.name)
-            lines.append(f"    {sanitized_name} --> {cls_id}[({cls.name})]")
-            
-            # Add methods if available
-            for child in cls.children:
-                if child.type == NodeType.METHOD:
-                    method_id = self._sanitize_id(f"{cls.name}_{child.name}")
-                    lines.append(f"    {cls_id} --> {method_id}[{child.name}]")
-        
-        # Add standalone functions
-        for func in functions:
-            func_id = self._sanitize_id(func.name)
-            lines.append(f"    {sanitized_name} --> {func_id}[{func.name}]")
-            
-            # Add parameters as notes
-            if func.parameters:
-                params = ", ".join(func.parameters[:3])
-                if len(func.parameters) > 3:
-                    params += "..."
-                lines.append(f"    {func_id} -.- params_{func_id}[/{params}/]")
-        
-        # Add styling
+
+        # Root file node
+        lines.append(f'    {sanitized_name}["{file_name}"]')
+        styles.append(f"    style {sanitized_name} fill:#6366f1,stroke:#818cf8,color:#fff,font-weight:bold")
+        prev_id = sanitized_name
+
+        # ── Classes ──
+        if classes:
+            sec = unique_id("sec_cls")
+            count = len(classes)
+            lines.append(f'    {sec}["{count} Classes"]')
+            styles.append(f"    style {sec} fill:#1e293b,stroke:#6366f1,color:#c7d2fe,font-weight:bold")
+            lines.append(f"    {prev_id} --> {sec}")
+            prev_id = sec
+
+            for cls in classes[:6]:
+                cid = unique_id(self._sanitize_id(cls.name))
+                lines.append(f'    {cid}["{cls.name}"]')
+                styles.append(f"    style {cid} fill:#1e3a5f,stroke:#3b82f6,color:#93c5fd")
+                lines.append(f"    {prev_id} --> {cid}")
+                prev_id = cid
+
+                methods = [c for c in cls.children if c.type == NodeType.METHOD]
+                for m in methods[:5]:
+                    mid = unique_id(self._sanitize_id(f"{cls.name}_{m.name}"))
+                    p = m.parameters or []
+                    params = ", ".join(p[:2])
+                    if len(p) > 2:
+                        params += ", ..."
+                    label = self._escape_mermaid_label(f"{m.name}({params})")
+                    lines.append(f'    {mid}["{label}"]')
+                    styles.append(f"    style {mid} fill:#0f172a,stroke:#334155,color:#94a3b8")
+                    lines.append(f"    {prev_id} --> {mid}")
+                    prev_id = mid
+
+                left = len(methods) - 5
+                if left > 0:
+                    moid = unique_id(self._sanitize_id(f"{cls.name}_more"))
+                    lines.append(f'    {moid}["+{left} more methods"]')
+                    lines.append(f"    {prev_id} -.-> {moid}")
+                    prev_id = moid
+
+            if len(classes) > 6:
+                mcid = unique_id("more_cls")
+                lines.append(f'    {mcid}["+{len(classes) - 6} more classes"]')
+                lines.append(f"    {prev_id} -.-> {mcid}")
+                prev_id = mcid
+
+        # ── Functions ──
+        if functions:
+            sec = unique_id("sec_fn")
+            count = len(functions)
+            lines.append(f'    {sec}["{count} Functions"]')
+            styles.append(f"    style {sec} fill:#1e293b,stroke:#7c3aed,color:#c4b5fd,font-weight:bold")
+            lines.append(f"    {prev_id} --> {sec}")
+            prev_id = sec
+
+            for fn in functions[:8]:
+                fid = unique_id(self._sanitize_id(fn.name))
+                p = fn.parameters or []
+                params = ", ".join(p[:3])
+                if len(p) > 3:
+                    params += ", ..."
+                label = self._escape_mermaid_label(f"{fn.name}({params})")
+                lines.append(f'    {fid}["{label}"]')
+                styles.append(f"    style {fid} fill:#2e1065,stroke:#7c3aed,color:#c4b5fd")
+                lines.append(f"    {prev_id} --> {fid}")
+                prev_id = fid
+
+            if len(functions) > 8:
+                mfid = unique_id("more_fns")
+                lines.append(f'    {mfid}["+{len(functions) - 8} more"]')
+                lines.append(f"    {prev_id} -.-> {mfid}")
+
+        # Empty state
+        if not classes and not functions:
+            lines.append(f'    empty["No classes or functions detected"]')
+            lines.append(f"    {prev_id} --> empty")
+
+        # Styling — applied after all nodes are defined
         lines.append("")
-        lines.append("    classDef classNode fill:#e1f5fe,stroke:#01579b")
-        lines.append("    classDef funcNode fill:#f3e5f5,stroke:#4a148c")
-        
-        for cls in classes:
-            lines.append(f"    class {self._sanitize_id(cls.name)} classNode")
-        
-        for func in functions:
-            lines.append(f"    class {self._sanitize_id(func.name)} funcNode")
-        
+        lines.extend(styles)
+
         return "\n".join(lines)
     
     def _generate_class_diagram(
@@ -199,8 +255,9 @@ class DiagramGeneratorService:
         ast_nodes: List[ASTNode],
         content: str,
     ) -> str:
-        """Generate a class diagram showing classes and relationships"""
+        """Generate an enhanced class diagram showing classes, relationships, and details"""
         lines = ["classDiagram"]
+        lines.append("    direction TB")
         
         classes = [n for n in ast_nodes if n.type == NodeType.CLASS]
         
@@ -211,31 +268,79 @@ class DiagramGeneratorService:
             lines.append("    note for NoClassesFound \"Try a file containing class definitions\"")
             return "\n".join(lines)
         
+        # First pass: Define all classes with their members
         for cls in classes:
             lines.append(f"    class {cls.name} {{")
             
             # Extract class content
             class_lines = content.split("\n")[cls.start_line - 1:cls.end_line]
             
-            # Add methods
-            for child in cls.children:
-                if child.type in [NodeType.METHOD, NodeType.FUNCTION]:
-                    params = ", ".join(child.parameters) if child.parameters else ""
-                    lines.append(f"        +{child.name}({params})")
-            
-            # Try to extract attributes from __init__ or constructor
+            # Add attributes first (better organization)
             attributes = self._extract_class_attributes(class_lines, file_path)
-            for attr in attributes:
-                lines.append(f"        -{attr}")
+            if attributes:
+                for attr in attributes:
+                    # Detect type hints if available
+                    attr_type = self._extract_attribute_type(class_lines, attr)
+                    if attr_type:
+                        lines.append(f"        -{attr}: {attr_type}")
+                    else:
+                        lines.append(f"        -{attr}")
+            
+            # Add methods with enhanced information
+            methods = [child for child in cls.children if child.type in [NodeType.METHOD, NodeType.FUNCTION]]
+            for child in methods:
+                # Determine visibility
+                visibility = "+"
+                if child.name.startswith("__") and not child.name.endswith("__"):
+                    visibility = "-"  # Private
+                elif child.name.startswith("_"):
+                    visibility = "#"  # Protected
+                
+                # Format parameters with types if available
+                p = child.parameters or []
+                params = ", ".join(p[:4])
+                if len(p) > 4:
+                    params += ", ..."
+                
+                # Try to extract return type
+                return_type = self._extract_return_type(class_lines, child.name)
+                method_signature = f"{child.name}({params})"
+                if return_type:
+                    method_signature += f" {return_type}"
+                
+                lines.append(f"        {visibility}{method_signature}")
             
             lines.append("    }")
+            lines.append("")
         
-        # Add relationships between classes
+        # Second pass: Add relationships
+        lines.append("    %% Relationships")
         for cls in classes:
-            # Look for inheritance in class definition
+            # Inheritance
             parent = self._extract_parent_class(content, cls)
-            if parent and parent in [c.name for c in classes]:
-                lines.append(f"    {parent} <|-- {cls.name}")
+            if parent:
+                # Check if parent is in the same file
+                if parent in [c.name for c in classes]:
+                    lines.append(f"    {parent} <|-- {cls.name} : inherits")
+                else:
+                    # Show external inheritance
+                    lines.append(f"    {parent} <|-- {cls.name} : extends")
+            
+            # Composition/Aggregation (detect from attributes)
+            class_lines = content.split("\n")[cls.start_line - 1:cls.end_line]
+            for other_cls in classes:
+                if other_cls.name != cls.name:
+                    # Check if class uses another class
+                    if self._check_class_usage(class_lines, other_cls.name):
+                        lines.append(f"    {cls.name} --> {other_cls.name} : uses")
+        
+        # Add notes for classes with docstrings
+        for cls in classes:
+            if hasattr(cls, 'docstring') and cls.docstring:
+                doc_preview = cls.docstring[:80].replace('"', "'")
+                if len(cls.docstring) > 80:
+                    doc_preview += "..."
+                lines.append(f"    note for {cls.name} \"{doc_preview}\"")
         
         return "\n".join(lines)
     
@@ -244,27 +349,106 @@ class DiagramGeneratorService:
         file_path: str,
         ast_nodes: List[ASTNode],
     ) -> str:
-        """Generate a sequence diagram showing function call flow"""
+        """Generate an enhanced sequence diagram showing realistic execution flow"""
         lines = ["sequenceDiagram"]
+        lines.append("    autonumber")
         
         # Add participants
-        functions = [n for n in ast_nodes if n.type in [NodeType.FUNCTION, NodeType.METHOD]]
+        classes = [n for n in ast_nodes if n.type == NodeType.CLASS]
+        functions = [n for n in ast_nodes if n.type == NodeType.FUNCTION]
         
-        if not functions:
-            lines.append("    Note right of User: No functions found")
+        if not classes and not functions:
+            lines.append("    participant User")
+            lines.append("    Note over User: No functions or methods found")
             return "\n".join(lines)
         
-        lines.append("    participant User")
-        for i, func in enumerate(functions[:5]):  # Limit to 5 functions
-            lines.append(f"    participant {self._sanitize_id(func.name)} as {func.name}")
+        # Add user/client as initiator
+        lines.append("    participant User as User")
+        lines.append("")
         
-        # Create a simple sequence
-        prev_func = "User"
-        for func in functions[:5]:
-            func_id = self._sanitize_id(func.name)
-            params = ", ".join(func.parameters[:2]) if func.parameters else ""
-            lines.append(f"    {prev_func}->>+{func_id}: call({params})")
-            lines.append(f"    {func_id}-->>-{prev_func}: result")
+        # Build more realistic flow based on structure
+        if classes:
+            # For OOP code, show class interactions
+            for i, cls in enumerate(classes[:3]):  # Limit to 3 classes for clarity
+                cls_id = self._sanitize_id(cls.name)
+                lines.append(f"    participant {cls_id} as {cls.name}")
+            
+            lines.append("")
+            
+            # Show initialization flow
+            first_cls = classes[0]
+            first_cls_id = self._sanitize_id(first_cls.name)
+            
+            # Check for __init__ or constructor (Java constructors have same name as class)
+            constructor_names = {"__init__", "constructor", "new", first_cls.name}
+            init_methods = [m for m in first_cls.children if m.name in constructor_names]
+            if init_methods:
+                ip = init_methods[0].parameters or []
+                init_params = ", ".join(ip[:3])
+                lines.append(f"    User->>+{first_cls_id}: new {first_cls.name}({init_params})")
+                lines.append(f"    Note over {first_cls_id}: Initialize instance")
+            else:
+                lines.append(f"    User->>+{first_cls_id}: create instance")
+            
+            lines.append("")
+            
+            # Show method calls (exclude constructors, dunder methods, variable nodes)
+            skip_names = {"__init__", "__str__", "__repr__", "__del__", "constructor", "new", first_cls.name}
+            methods = [m for m in first_cls.children if m.type == NodeType.METHOD and m.name not in skip_names][:4]
+            
+            for method in methods:
+                mp = method.parameters or []
+                method_params = ", ".join(mp[:2])
+                lines.append(f"    User->>+{first_cls_id}: {method.name}({method_params})")
+                
+                # Show internal processing
+                lines.append(f"    {first_cls_id}->>{first_cls_id}: process data")
+                
+                # If multiple classes, show interaction
+                if len(classes) > 1:
+                    second_cls = classes[1]
+                    second_cls_id = self._sanitize_id(second_cls.name)
+                    lines.append(f"    {first_cls_id}->>+{second_cls_id}: delegate task")
+                    lines.append(f"    {second_cls_id}-->>-{first_cls_id}: return result")
+                
+                lines.append(f"    {first_cls_id}-->>-User: return value")
+                lines.append("")
+            
+        else:
+            # For procedural code, show function call chain
+            for i, func in enumerate(functions[:6]):
+                func_id = self._sanitize_id(func.name)
+                lines.append(f"    participant {func_id} as {func.name}()")
+            
+            lines.append("")
+            
+            # Create a more realistic call chain
+            if len(functions) >= 1:
+                first_func_id = self._sanitize_id(functions[0].name)
+                fp = functions[0].parameters or []
+                params = ", ".join(fp[:2])
+                lines.append(f"    User->>+{first_func_id}: {functions[0].name}({params})")
+                
+                # Show cascading calls
+                prev_id = first_func_id
+                for func in functions[1:4]:
+                    func_id = self._sanitize_id(func.name)
+                    cfp = func.parameters or []
+                    func_params = ", ".join(cfp[:2])
+                    lines.append(f"    {prev_id}->>+{func_id}: {func.name}({func_params})")
+                    
+                    # Add processing note
+                    if cfp:
+                        lines.append(f"    Note over {func_id}: Process {cfp[0]}")
+                    
+                    lines.append(f"    {func_id}-->>-{prev_id}: result")
+                    prev_id = func_id
+                
+                lines.append(f"    {first_func_id}-->>-User: final result")
+        
+        # Add footer note
+        lines.append("")
+        lines.append(f"    Note over User: Execution completed")
         
         return "\n".join(lines)
     
@@ -656,6 +840,14 @@ class DiagramGeneratorService:
             sanitized = "n" + sanitized
         return sanitized or "unknown"
     
+    def _escape_mermaid_label(self, text: str) -> str:
+        """Escape special characters in Mermaid labels used inside double quotes"""
+        # Replace characters that can break Mermaid parsing
+        text = text.replace('"', "'")
+        text = text.replace('<', "&lt;")
+        text = text.replace('>', "&gt;")
+        return text
+    
     def _extract_class_attributes(
         self,
         class_lines: List[str],
@@ -687,4 +879,38 @@ class DiagramGeneratorService:
             if match:
                 return match.group(1)
         return None
+    
+    def _extract_attribute_type(self, class_lines: List[str], attr_name: str) -> Optional[str]:
+        """Extract type hint for a class attribute"""
+        for line in class_lines:
+            # Look for type hints like: self.attr: Type = value
+            match = re.search(rf"self\.{attr_name}\s*:\s*([^\s=]+)", line)
+            if match:
+                return match.group(1)
+        return None
+    
+    def _extract_return_type(self, class_lines: List[str], method_name: str) -> Optional[str]:
+        """Extract return type hint for a method"""
+        for i, line in enumerate(class_lines):
+            if f"def {method_name}" in line:
+                # Look for return type hint: -> ReturnType:
+                match = re.search(r"->\s*([^\s:]+)", line)
+                if match:
+                    return match.group(1)
+                break
+        return None
+    
+    def _check_class_usage(self, class_lines: List[str], other_class_name: str) -> bool:
+        """Check if a class uses another class (for composition/aggregation)"""
+        class_text = "\n".join(class_lines)
+        # Look for instantiation or type hints
+        patterns = [
+            rf"\b{other_class_name}\s*\(",  # Instantiation
+            rf":\s*{other_class_name}\b",   # Type hint
+            rf"self\.\w+\s*=\s*{other_class_name}",  # Assignment
+        ]
+        for pattern in patterns:
+            if re.search(pattern, class_text):
+                return True
+        return False
 

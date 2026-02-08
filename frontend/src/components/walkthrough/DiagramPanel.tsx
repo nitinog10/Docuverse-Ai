@@ -69,8 +69,6 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
   const renderMermaid = async (code: string) => {
     if (!containerRef.current) return
     
-    setIsLoading(true)
-    
     // Clear previous content to prevent React conflicts
     containerRef.current.innerHTML = ''
     
@@ -79,6 +77,12 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
       mermaid.initialize({
         startOnLoad: false,
         theme: 'dark',
+        securityLevel: 'loose',
+        flowchart: {
+          useMaxWidth: true,
+          htmlLabels: true,
+          curve: 'linear',
+        },
         themeVariables: {
           primaryColor: '#6366f1',
           primaryTextColor: '#e4e4e7',
@@ -105,8 +109,9 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
       if (containerRef.current) {
         containerRef.current.innerHTML = svg
       }
-    } catch (error) {
-      console.error('Error rendering diagram:', error)
+    } catch (err) {
+      console.error('Mermaid render error:', err)
+      console.error('Mermaid code that failed:', code)
       if (containerRef.current) {
         containerRef.current.innerHTML = `
           <div class="flex flex-col items-center justify-center h-full text-dv-text-muted gap-2">
@@ -191,7 +196,7 @@ export function DiagramPanel({ repositoryId, filePath }: DiagramPanelProps) {
         )}
         <div
           ref={containerRef}
-          className="min-h-[300px] flex items-center justify-center"
+          className="min-h-[300px] flex items-start justify-center [&>svg]:max-w-full"
         />
       </div>
 
