@@ -29,7 +29,7 @@ settings = get_settings()
 # In-memory walkthrough store
 walkthroughs_db: dict[str, WalkthroughScript] = {}
 audio_walkthroughs_db: dict[str, AudioWalkthrough] = {}
-audio_bytes_store: dict[str, bytes] = {}  # walkthrough_id -> concatenated MP3 bytes
+audio_bytes_store: dict[str, bytes] = {}  # walkthrough_id -> MP3 bytes
 
 
 @router.post("/generate", response_model=WalkthroughScript)
@@ -255,14 +255,14 @@ async def generate_audio_for_walkthrough(walkthrough_id: str):
     audio_segments = []
     all_audio_bytes = b""
     current_time = 0.0
-    
+
     for segment in walkthrough.segments:
         try:
             audio_data = await audio_generator.generate_segment_audio(segment.text)
             duration = audio_generator.estimate_duration(segment.text)
-            
+
             all_audio_bytes += audio_data
-            
+
             audio_segment = AudioSegment(
                 id=f"audio_{uuid.uuid4().hex[:8]}",
                 script_segment_id=segment.id,
@@ -271,14 +271,14 @@ async def generate_audio_for_walkthrough(walkthrough_id: str):
                 start_time=current_time,
                 end_time=current_time + duration,
             )
-            
+
             audio_segments.append(audio_segment)
             current_time += duration
-            
+
         except Exception as e:
             print(f"Error generating audio for segment {segment.id}: {e}")
             continue
-    
+
     # Create audio walkthrough record
     audio_walkthrough = AudioWalkthrough(
         id=walkthrough_id,
@@ -288,7 +288,7 @@ async def generate_audio_for_walkthrough(walkthrough_id: str):
         full_audio_url=f"/api/walkthroughs/{walkthrough_id}/audio/stream",
         total_duration=current_time,
     )
-    
+
     audio_walkthroughs_db[walkthrough_id] = audio_walkthrough
     audio_bytes_store[walkthrough_id] = all_audio_bytes
     print(f"✅ Audio generated for walkthrough {walkthrough_id} ({len(audio_segments)} segments, {current_time:.1f}s)")

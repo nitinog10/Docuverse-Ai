@@ -108,7 +108,19 @@ class VectorStoreService:
                     "name": chunk.name or "",
                 }
                 metadata.update(chunk.metadata)
-                metadatas.append(metadata)
+
+                # Sanitize metadata: ChromaDB only accepts str, int, float, bool
+                sanitized: Dict[str, Any] = {}
+                for k, v in metadata.items():
+                    if v is None:
+                        continue
+                    if isinstance(v, list):
+                        sanitized[k] = ", ".join(str(i) for i in v)
+                    elif isinstance(v, (str, int, float, bool)):
+                        sanitized[k] = v
+                    else:
+                        sanitized[k] = str(v)
+                metadatas.append(sanitized)
                 
                 ids.append(chunk.id)
             
