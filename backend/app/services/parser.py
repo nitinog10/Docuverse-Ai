@@ -90,6 +90,16 @@ class ParserService:
                 "queries": self._get_typescript_queries(),
             }
             
+            # Java parser
+            try:
+                import tree_sitter_java
+                self._parsers["java"] = {
+                    "parser": Parser(Language(tree_sitter_java.language())),
+                    "queries": self._get_java_queries(),
+                }
+            except ImportError:
+                pass  # Java parsing will use fallback
+            
             self._initialized = True
             
         except ImportError as e:
@@ -126,6 +136,15 @@ class ParserService:
             "interfaces": "(interface_declaration name: (type_identifier) @name) @interface",
             "imports": "(import_statement) @import",
             "types": "(type_alias_declaration name: (type_identifier) @name) @type",
+        }
+    
+    def _get_java_queries(self) -> Dict[str, str]:
+        """Tree-sitter queries for Java"""
+        return {
+            "classes": "(class_declaration name: (identifier) @name) @class",
+            "methods": "(method_declaration name: (identifier) @name) @method",
+            "constructors": "(constructor_declaration name: (identifier) @name) @constructor",
+            "imports": "(import_declaration) @import",
         }
     
     def detect_language(self, file_path: str) -> Optional[str]:
@@ -255,10 +274,17 @@ class ParserService:
         file_path: str
     ) -> List[ASTNode]:
         """Extract structured nodes from Tree-sitter parse tree"""
-        nodes = []
+        all_nodes = []
         lines = content.split("\n")
         
         def walk_tree(node: Any, depth: int = 0):
+            """Walk tree, returning tracked nodes.
+            
+            Returns a single ASTNode for tracked types, or a list of
+            collected descendant ASTNodes for non-tracked container nodes
+            (like 'block', 'class_body') so they get properly nested
+            as children of their parent tracked node.
+            """
             node_type = self._map_node_type(node.type, language)
             
             if node_type:
@@ -286,25 +312,49 @@ class ParserService:
                     }
                 )
                 
-                # Process children
+                # Collect children through any intermediate non-tracked nodes
                 for child in node.children:
-                    child_nodes = walk_tree(child, depth + 1)
-                    if child_nodes:
-                        ast_node.children.extend(
-                            child_nodes if isinstance(child_nodes, list) else [child_nodes]
-                        )
+                    child_result = walk_tree(child, depth + 1)
+                    if child_result is not None:
+                        if isinstance(child_result, list):
+                            ast_node.children.extend(child_result)
+                        else:
+                            ast_node.children.append(child_result)
                 
-                nodes.append(ast_node)
+                all_nodes.append(ast_node)
                 return ast_node
             
-            # If not a tracked node type, still walk children
+            # Non-tracked node: collect any tracked descendants and bubble up
+            collected = []
             for child in node.children:
-                walk_tree(child, depth)
+                child_result = walk_tree(child, depth)
+                if child_result is not None:
+                    if isinstance(child_result, list):
+                        collected.extend(child_result)
+                    else:
+                        collected.append(child_result)
             
-            return None
+            return collected if collected else None
         
         walk_tree(root_node)
-        return nodes
+        
+        # Post-process: mark functions nested inside classes as METHOD
+        # and recursively remove all descendants from the top-level list
+        child_ids = set()
+        
+        def collect_descendant_ids(node, inside_class=False):
+            for child in node.children:
+                child_ids.add(child.id)
+                # Direct children of a CLASS that are FUNCTION → mark as METHOD
+                if inside_class and child.type == NodeType.FUNCTION:
+                    child.type = NodeType.METHOD
+                collect_descendant_ids(child, inside_class=(child.type == NodeType.CLASS))
+        
+        for node in all_nodes:
+            collect_descendant_ids(node, inside_class=(node.type == NodeType.CLASS))
+        
+        # Return only top-level nodes (children are accessed via .children)
+        return [n for n in all_nodes if n.id not in child_ids]
     
     def _map_node_type(self, ts_type: str, language: str) -> Optional[NodeType]:
         """Map Tree-sitter node type to our NodeType enum"""
@@ -320,7 +370,12 @@ class ParserService:
             "arrow_function": NodeType.FUNCTION,
             "method_definition": NodeType.METHOD,
             "class_declaration": NodeType.CLASS,
-            "import_statement": NodeType.IMPORT,
+            
+            # Java
+            "method_declaration": NodeType.METHOD,
+            "constructor_declaration": NodeType.METHOD,
+            "import_declaration": NodeType.IMPORT,
+            "field_declaration": NodeType.VARIABLE,
             
             # Common
             "variable_declaration": NodeType.VARIABLE,
@@ -336,6 +391,16 @@ class ParserService:
                 return child.text.decode("utf-8")
             if child.type == "name":
                 return child.text.decode("utf-8")
+        
+        # For arrow functions, look at the parent variable_declarator for the name
+        # e.g., const MyComponent = () => { ... }
+        if node.type == "arrow_function" and node.parent:
+            parent = node.parent
+            if parent.type == "variable_declarator":
+                for child in parent.children:
+                    if child.type == "identifier":
+                        return child.text.decode("utf-8")
+        
         return None
     
     def _extract_docstring(
@@ -480,6 +545,93 @@ class ParserService:
                         id=f"{file_path}:{i+1}:{uuid.uuid4().hex[:6]}",
                         type=NodeType.IMPORT,
                         name=line.strip(),
+                        start_line=i + 1,
+                        end_line=i + 1,
+                        start_col=0,
+                        end_col=len(line),
+                    ))
+        
+        elif language == "java":
+            # Match Java classes, methods, constructors, and imports
+            class_pattern = r"^(\s*)(?:public|private|protected)?\s*(?:abstract\s+|final\s+|static\s+)*class\s+(\w+)"
+            method_pattern = r"^(\s+)(?:public|private|protected)\s+(?:static\s+|final\s+|abstract\s+|synchronized\s+)*(?:\w+(?:<[\w<>, ]+>)?)\s+(\w+)\s*\("
+            constructor_pattern = r"^(\s+)(?:public|private|protected)\s+(\w+)\s*\("
+            import_pattern = r"^import\s+.+"
+            
+            current_class = None
+            class_indent = 0
+            
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                
+                # Classes
+                match = re.match(class_pattern, line)
+                if match:
+                    indent, name = match.groups()
+                    class_indent = len(indent) if indent else 0
+                    current_class = ASTNode(
+                        id=f"{file_path}:{i+1}:{uuid.uuid4().hex[:6]}",
+                        type=NodeType.CLASS,
+                        name=name,
+                        start_line=i + 1,
+                        end_line=i + 1,
+                        start_col=class_indent,
+                        end_col=len(line),
+                        children=[],
+                    )
+                    nodes.append(current_class)
+                    continue
+                
+                # Methods (must be indented inside a class)
+                match = re.match(method_pattern, line)
+                if match and current_class:
+                    indent, name = match.groups()
+                    # Extract params from the line
+                    paren_match = re.search(r'\(([^)]*)\)', line)
+                    params = []
+                    if paren_match:
+                        raw = paren_match.group(1).strip()
+                        if raw:
+                            for p in raw.split(','):
+                                parts = p.strip().split()
+                                if len(parts) >= 2:
+                                    params.append(parts[-1])  # param name
+                    
+                    method_node = ASTNode(
+                        id=f"{file_path}:{i+1}:{uuid.uuid4().hex[:6]}",
+                        type=NodeType.METHOD,
+                        name=name,
+                        start_line=i + 1,
+                        end_line=i + 1,
+                        start_col=len(indent),
+                        end_col=len(line),
+                        parameters=params if params else None,
+                    )
+                    current_class.children.append(method_node)
+                    continue
+                
+                # Constructors
+                match = re.match(constructor_pattern, line)
+                if match and current_class and match.group(2) == current_class.name:
+                    indent, name = match.groups()
+                    method_node = ASTNode(
+                        id=f"{file_path}:{i+1}:{uuid.uuid4().hex[:6]}",
+                        type=NodeType.METHOD,
+                        name=name,
+                        start_line=i + 1,
+                        end_line=i + 1,
+                        start_col=len(indent),
+                        end_col=len(line),
+                    )
+                    current_class.children.append(method_node)
+                    continue
+                
+                # Imports
+                if re.match(import_pattern, stripped):
+                    nodes.append(ASTNode(
+                        id=f"{file_path}:{i+1}:{uuid.uuid4().hex[:6]}",
+                        type=NodeType.IMPORT,
+                        name=stripped,
                         start_line=i + 1,
                         end_line=i + 1,
                         start_col=0,
