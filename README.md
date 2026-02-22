@@ -728,7 +728,7 @@ This project is built for hackathon demonstration purposes.
 
 <div align="center">
 
-**Built with ❤️ by Team DocuVerse**
+**Built with ❤️ by Team BitMask**
 
 *Transforming the way developers understand code — one walkthrough at a time.*
 
