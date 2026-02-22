@@ -205,6 +205,66 @@ export const files = {
   
   getAST: (repoId: string, path: string) =>
     request<ASTNode[]>(`/files/${repoId}/ast?path=${encodeURIComponent(path)}`),
+
+  getImpact: (repoId: string, path: string, symbol?: string) => {
+    const symbolParam = symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''
+    return request<ImpactAnalysis>(
+      `/files/${repoId}/impact?path=${encodeURIComponent(path)}${symbolParam}`
+    )
+  },
+
+  getCodebaseImpact: (repoId: string) =>
+    request<CodebaseImpact>(`/files/${repoId}/impact/codebase`),
+}
+
+// ============================================================
+// Impact Analysis
+// ============================================================
+
+export interface FileImpactSummary {
+  file: string
+  direct_dependents: number
+  total_affected: number
+  risk_score: number
+  risk_level: 'low' | 'medium' | 'high' | string
+}
+
+export interface CodebaseImpact {
+  total_files: number
+  total_dependencies: number
+  is_dag: boolean
+  connected_components: number
+  circular_dependencies: string[][]
+  hotspots: FileImpactSummary[]
+  most_imported: { file: string; import_count: number }[]
+  overall_risk_score: number
+  overall_risk_level: 'low' | 'medium' | 'high' | string
+  recommended_actions: string[]
+  brief_script: string
+  impact_mermaid: string
+}
+
+export interface ImpactAnalysis {
+  target_file: string
+  symbol: string | null
+  symbol_context: {
+    found: boolean
+    name: string
+    type: string
+    start_line: number
+    end_line: number
+    parameters: string[]
+  } | null
+  direct_dependents: string[]
+  affected_files: string[]
+  total_affected: number
+  dependency_chain: Record<string, string[]>
+  circular_dependencies: string[][]
+  risk_score: number
+  risk_level: 'low' | 'medium' | 'high' | string
+  recommended_refactor_steps: string[]
+  brief_script: string
+  impact_mermaid: string
 }
 
 // ============================================================

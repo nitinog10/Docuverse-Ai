@@ -238,6 +238,52 @@ class DiagramRequest(BaseModel):
 
 
 # ============================================================
+# Impact Analysis Models
+# ============================================================
+
+class ImpactAnalysisResponse(BaseModel):
+    """Impact analysis result for a file/symbol change"""
+    target_file: str
+    symbol: Optional[str] = None
+    symbol_context: Optional[Dict[str, Any]] = None
+    direct_dependents: List[str]
+    affected_files: List[str]
+    total_affected: int
+    dependency_chain: Dict[str, List[str]]
+    circular_dependencies: List[List[str]]
+    risk_score: int = Field(ge=0, le=100)
+    risk_level: str
+    recommended_refactor_steps: List[str]
+    brief_script: str
+    impact_mermaid: str
+
+
+class FileImpactSummary(BaseModel):
+    """Per-file summary inside a codebase impact report"""
+    file: str
+    direct_dependents: int
+    total_affected: int
+    risk_score: int = Field(ge=0, le=100)
+    risk_level: str
+
+
+class CodebaseImpactResponse(BaseModel):
+    """Full-codebase impact analysis"""
+    total_files: int
+    total_dependencies: int
+    is_dag: bool
+    connected_components: int
+    circular_dependencies: List[List[str]]
+    hotspots: List[FileImpactSummary]
+    most_imported: List[Dict[str, Any]]
+    overall_risk_score: int = Field(ge=0, le=100)
+    overall_risk_level: str
+    recommended_actions: List[str]
+    brief_script: str
+    impact_mermaid: str
+
+
+# ============================================================
 # Sandbox Models
 # ============================================================
 

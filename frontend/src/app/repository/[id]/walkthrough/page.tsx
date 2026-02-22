@@ -6,6 +6,7 @@ import { WalkthroughPlayer } from '@/components/walkthrough/WalkthroughPlayer'
 import { FileExplorer } from '@/components/walkthrough/FileExplorer'
 import { DiagramPanel } from '@/components/walkthrough/DiagramPanel'
 import { SandboxPanel } from '@/components/walkthrough/SandboxPanel'
+import { ImpactPanel } from '@/components/walkthrough/ImpactPanel'
 import {
   ArrowLeft,
   Layers,
@@ -15,6 +16,7 @@ import {
   Loader2,
   Sparkles,
   AlertCircle,
+  Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -22,7 +24,7 @@ import { clsx } from 'clsx'
 import { files, walkthroughs, repositories, FileNode, WalkthroughScript, Repository } from '@/lib/api'
 import toast from 'react-hot-toast'
 
-type PanelType = 'files' | 'diagram' | 'sandbox'
+type PanelType = 'files' | 'diagram' | 'sandbox' | 'impact'
 
 /** Adapt API FileNode shape (is_directory) to component shape (isDirectory) */
 function adaptFileTree(nodes: FileNode[]): any[] {
@@ -204,83 +206,98 @@ export default function WalkthroughPage({ params }: { params: { id: string } }) 
             icon={<Terminal className="w-3.5 h-3.5" />}
             label="Sandbox"
           />
+          <PanelButton
+            active={activePanel === 'impact'}
+            onClick={() => setActivePanel('impact')}
+            icon={<Zap className="w-3.5 h-3.5" />}
+            label="Impact"
+          />
         </div>
       </header>
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Side panel */}
-        <motion.div
-          className="w-72 border-r border-dv-border/30 bg-dv-surface overflow-hidden flex-shrink-0"
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-        >
-          {activePanel === 'files' && (
-            <FileExplorer
-              files={fileTree}
-              selectedFile={selectedFile}
-              onSelectFile={setSelectedFile}
-            />
-          )}
-          {activePanel === 'diagram' && (
-            <DiagramPanel repositoryId={params.id} filePath={selectedFile} />
-          )}
-          {activePanel === 'sandbox' && (
-            <SandboxPanel />
-          )}
-        </motion.div>
+        {/* Impact takes the full page when active */}
+        {activePanel === 'impact' ? (
+          <div className="flex-1 overflow-hidden">
+            <ImpactPanel repositoryId={params.id} filePath={selectedFile} />
+          </div>
+        ) : (
+          <>
+            {/* Side panel */}
+            <motion.div
+              className="w-72 border-r border-dv-border/30 bg-dv-surface overflow-hidden flex-shrink-0"
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+            >
+              {activePanel === 'files' && (
+                <FileExplorer
+                  files={fileTree}
+                  selectedFile={selectedFile}
+                  onSelectFile={setSelectedFile}
+                />
+              )}
+              {activePanel === 'diagram' && (
+                <DiagramPanel repositoryId={params.id} filePath={selectedFile} />
+              )}
+              {activePanel === 'sandbox' && (
+                <SandboxPanel />
+              )}
+            </motion.div>
 
-        {/* Walkthrough player or generate prompt */}
-        <div className="flex-1 overflow-hidden relative">
-          {isLoadingCode ? (
-            <div className="h-full flex items-center justify-center">
-              <Loader2 className="w-5 h-5 text-dv-accent animate-spin mr-3" />
-              <span className="text-sm text-dv-text-muted">Loading file…</span>
-            </div>
-          ) : !playerScript ? (
-            /* No walkthrough yet — show generate prompt */
-            <div className="h-full flex flex-col items-center justify-center px-8">
-              <div className="w-14 h-14 rounded-2xl bg-dv-accent/10 flex items-center justify-center mb-4">
-                <Sparkles className="w-7 h-7 text-dv-accent" />
-              </div>
-              <h2 className="text-lg font-semibold mb-2">Generate a Walkthrough</h2>
-              <p className="text-sm text-dv-text-muted text-center max-w-md mb-6">
-                AI will analyze <span className="text-dv-text font-medium">{selectedFile.split('/').pop()}</span> and create
-                a narrated, step-by-step code walkthrough with voice.
-              </p>
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !selectedFile}
-                className="btn-primary flex items-center gap-2 disabled:opacity-50"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Generate Walkthrough
-                  </>
-                )}
-              </button>
-              {codeContent && (
-                <p className="text-xs text-dv-text-muted mt-4">
-                  {codeContent.split('\n').length} lines · {selectedFile.split('.').pop()?.toUpperCase()}
-                </p>
+            {/* Walkthrough player or generate prompt */}
+            <div className="flex-1 overflow-hidden relative">
+              {isLoadingCode ? (
+                <div className="h-full flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-dv-accent animate-spin mr-3" />
+                  <span className="text-sm text-dv-text-muted">Loading file…</span>
+                </div>
+              ) : !playerScript ? (
+                /* No walkthrough yet — show generate prompt */
+                <div className="h-full flex flex-col items-center justify-center px-8">
+                  <div className="w-14 h-14 rounded-2xl bg-dv-accent/10 flex items-center justify-center mb-4">
+                    <Sparkles className="w-7 h-7 text-dv-accent" />
+                  </div>
+                  <h2 className="text-lg font-semibold mb-2">Generate a Walkthrough</h2>
+                  <p className="text-sm text-dv-text-muted text-center max-w-md mb-6">
+                    AI will analyze <span className="text-dv-text font-medium">{selectedFile.split('/').pop()}</span> and create
+                    a narrated, step-by-step code walkthrough with voice.
+                  </p>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !selectedFile}
+                    className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Generate Walkthrough
+                      </>
+                    )}
+                  </button>
+                  {codeContent && (
+                    <p className="text-xs text-dv-text-muted mt-4">
+                      {codeContent.split('\n').length} lines · {selectedFile.split('.').pop()?.toUpperCase()}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <WalkthroughPlayer
+                  code={codeContent}
+                  script={playerScript}
+                  filePath={selectedFile}
+                  isPlaying={isPlaying}
+                  onPlayingChange={setIsPlaying}
+                />
               )}
             </div>
-          ) : (
-            <WalkthroughPlayer
-              code={codeContent}
-              script={playerScript}
-              filePath={selectedFile}
-              isPlaying={isPlaying}
-              onPlayingChange={setIsPlaying}
-            />
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   )

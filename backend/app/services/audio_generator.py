@@ -10,10 +10,12 @@ Both paths return MP3 bytes, so the rest of the pipeline can treat all
 audio uniformly.
 """
 
+import asyncio
 import io
 import os
 import struct
-from typing import Optional, AsyncIterator
+import time
+from typing import Optional, AsyncIterator, List, Tuple
 
 import httpx
 import aiofiles
@@ -133,6 +135,30 @@ class AudioGeneratorService:
             chunk = await self.generate_segment_audio(text, voice_id)
             chunks.append(chunk)
         return b"".join(chunks)
+
+    async def generate_segments_parallel(
+        self,
+        texts: List[str],
+        voice_id: Optional[str] = None,
+        max_concurrent: int = 4,
+    ) -> List[bytes]:
+        """Generate audio for multiple segments in parallel (up to max_concurrent at a time).
+
+        Returns a list of bytes in the same order as *texts*.
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def _gen(text: str) -> bytes:
+            async with semaphore:
+                return await self.generate_segment_audio(text, voice_id)
+
+        start = time.perf_counter()
+        results = await asyncio.gather(*[_gen(t) for t in texts], return_exceptions=True)
+        elapsed = time.perf_counter() - start
+        print(f"⚡ Parallel audio generation for {len(texts)} segments completed in {elapsed:.1f}s")
+
+        # Replace exceptions with empty bytes
+        return [r if isinstance(r, bytes) else b"" for r in results]
 
     async def stream_audio(
         self,

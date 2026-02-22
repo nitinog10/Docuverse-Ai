@@ -9,13 +9,15 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.config import get_settings
 from app.services.documentation_generator import DocumentationGenerator
+from app.services.persistence import save_documentation_cache, load_documentation_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# In-memory stores
-docs_cache: dict = {}          # repo_id -> full doc dict
+# Load persisted documentation cache (survives server restarts)
+docs_cache: dict = load_documentation_cache()
 docs_generating: dict = {}     # repo_id -> bool
+print(f"📂 Loaded documentation cache for {len(docs_cache)} repositories from disk")
 
 doc_generator = DocumentationGenerator()
 
@@ -31,7 +33,8 @@ async def _generate_task(repo_id: str):
         path = _repo_path(repo_id)
         result = await doc_generator.generate_repository_docs(path)
         docs_cache[repo_id] = result
-        logger.info("Documentation generated for repo %s", repo_id)
+        save_documentation_cache(docs_cache)  # persist to disk
+        logger.info("Documentation generated & saved for repo %s", repo_id)
     except Exception as exc:
         logger.error("Documentation generation failed for %s: %s", repo_id, exc)
         docs_cache[repo_id] = {
@@ -41,6 +44,7 @@ async def _generate_task(repo_id: str):
             "files": [],
             "dependencies": "",
         }
+        save_documentation_cache(docs_cache)  # persist even failures
     finally:
         docs_generating.pop(repo_id, None)
 

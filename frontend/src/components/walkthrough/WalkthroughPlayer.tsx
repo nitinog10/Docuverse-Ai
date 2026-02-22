@@ -13,7 +13,6 @@ import {
   Maximize2,
   MessageSquare,
   Clock,
-  Loader2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -94,14 +93,14 @@ export function WalkthroughPlayer({
 
   // Audio pipeline state
   const [audioReady, setAudioReady] = useState(false)
-  const [audioLoading, setAudioLoading] = useState(true)
+  const [audioLoading, setAudioLoading] = useState(false)  // don't block UI
   const [audioError, setAudioError] = useState<string | null>(null)
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null)
   const [segmentTimings, setSegmentTimings] = useState<AudioSegmentTiming[]>([])
   const [displayTime, setDisplayTime] = useState(0)
 
-  // Fallback: browser SpeechSynthesis when backend audio is unavailable
-  const [useBrowserTTS, setUseBrowserTTS] = useState(false)
+  // Start with browser TTS immediately – upgrade to real audio when ready
+  const [useBrowserTTS, setUseBrowserTTS] = useState(true)
 
   // ── Refs ────────────────────────────────────────────────────────────────
   const codeContainerRef = useRef<HTMLDivElement>(null)
@@ -118,20 +117,18 @@ export function WalkthroughPlayer({
   const currentSegment = script.segments.length > 0 ? script.segments[safeIndex] : undefined
   const lines = code.split('\n')
 
-  // ── Poll for ElevenLabs audio readiness ─────────────────────────────────
+  // ── Background poll for server-generated audio ──────────────────────────
+  // Browser TTS is used immediately; this upgrades to real audio when ready.
   useEffect(() => {
     let cancelled = false
     let pollTimer: ReturnType<typeof setTimeout> | null = null
-    let pollInterval = 2000 // start at 2s, back off gradually
+    let pollInterval = 3000 // start at 3s
+    let pollCount = 0
+    const MAX_POLLS = 20 // ~60s total
 
     const fetchAudio = async () => {
       const token = getAuthToken()
-      if (!token) {
-        setAudioError('Not authenticated')
-        setAudioLoading(false)
-        setUseBrowserTTS(true)
-        return
-      }
+      if (!token) return // browser TTS already active
 
       try {
         // 1. Check if the backend has finished generating audio
@@ -141,12 +138,17 @@ export function WalkthroughPlayer({
         )
 
         if (metaRes.status === 202) {
+          pollCount++
+          if (pollCount >= MAX_POLLS) {
+            console.info('Audio generation timed out, staying with browser TTS')
+            return
+          }
           // Audio still generating – poll again with backoff (max 6s)
-          pollInterval = Math.min(pollInterval + 1000, 6000)
+          pollInterval = Math.min(pollInterval + 500, 6000)
           if (!cancelled) pollTimer = setTimeout(fetchAudio, pollInterval)
           return
         }
-        if (!metaRes.ok) throw new Error('Failed to fetch audio metadata')
+        if (!metaRes.ok) return // stay with browser TTS
 
         const meta = await metaRes.json()
         if (cancelled) return
@@ -155,33 +157,43 @@ export function WalkthroughPlayer({
         const timings: AudioSegmentTiming[] = (
           meta.audioSegments ?? meta.audio_segments ?? []
         ).map(normaliseSegmentTiming)
-        setSegmentTimings(timings)
 
         // 2. Fetch the actual audio stream as a blob
         const streamRes = await fetch(
           `${API_BASE_URL}/walkthroughs/${script.id}/audio/stream`,
           { headers: { Authorization: `Bearer ${token}` } },
         )
-        if (!streamRes.ok) throw new Error('Failed to fetch audio stream')
+        if (!streamRes.ok) return // stay with browser TTS
+
+        // Verify response is actually audio
+        const contentType = streamRes.headers.get('content-type') || ''
+        if (!contentType.includes('audio')) return
 
         const blob = await streamRes.blob()
         if (cancelled) return
 
+        // Guard: if the blob is empty or too small, it's not valid audio
+        if (!blob || blob.size < 100) return
+
+        // Audio is ready — upgrade from browser TTS
         const url = URL.createObjectURL(blob)
+        setSegmentTimings(timings)
         setAudioBlobUrl(url)
         setAudioReady(true)
+        setUseBrowserTTS(false)
         setAudioLoading(false)
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Audio fetch error:', err)
-          setAudioError(err instanceof Error ? err.message : 'Audio unavailable')
-          setAudioLoading(false)
-          setUseBrowserTTS(true) // fallback
+        // Stop browser TTS if playing
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel()
         }
+        console.info('🔊 Upgraded to server-generated audio')
+      } catch {
+        // Silently stay with browser TTS
       }
     }
 
-    fetchAudio()
+    // Start polling after a short delay (give backend time to start generating)
+    pollTimer = setTimeout(fetchAudio, 3000)
     return () => {
       cancelled = true
       if (pollTimer) clearTimeout(pollTimer)
@@ -283,6 +295,19 @@ export function WalkthroughPlayer({
     onPlayingChange(false)
     setSegmentProgress(100)
   }, [onPlayingChange])
+
+  /** If the <audio> element fails to load/play, fall back to browser TTS. */
+  const handleAudioError = useCallback(() => {
+    console.warn('Audio element playback error – switching to browser TTS')
+    setAudioReady(false)
+    setAudioError('Audio playback failed')
+    setUseBrowserTTS(true)
+    // Revoke the broken blob URL so it doesn't retry
+    if (audioBlobUrl) {
+      URL.revokeObjectURL(audioBlobUrl)
+      setAudioBlobUrl(null)
+    }
+  }, [audioBlobUrl])
 
   // ── Browser TTS progress timer (fallback only) ─────────────────────────
   useEffect(() => {
@@ -409,19 +434,14 @@ export function WalkthroughPlayer({
           preload="auto"
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleAudioEnded}
+          onError={handleAudioError}
         />
       )}
 
-      {/* Audio loading banner */}
-      {audioLoading && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-dv-accent/10 border-b border-dv-border text-sm text-dv-accent">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Generating ElevenLabs audio…
-        </div>
-      )}
-      {audioError && !audioReady && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-dv-warning/10 border-b border-dv-border text-sm text-dv-warning">
-          {useBrowserTTS ? 'Using browser voice (ElevenLabs unavailable)' : audioError}
+      {/* Audio status – show subtle indicator when upgrade is available */}
+      {audioReady && !useBrowserTTS && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-green-500/10 border-b border-dv-border text-xs text-green-400">
+          🔊 AI voice active
         </div>
       )}
 

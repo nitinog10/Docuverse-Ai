@@ -5,6 +5,8 @@ Generates structured, MNC-standard documentation for repository code files
 and folders using GPT-4o with tree-sitter AST context.
 """
 
+import asyncio
+import hashlib
 import os
 import logging
 from typing import List, Dict, Any, Optional
@@ -27,7 +29,15 @@ SKIP_FILES = {
     ".DS_Store", "Thumbs.db", ".gitignore", ".env", "package-lock.json",
     "yarn.lock", "pnpm-lock.yaml", ".eslintcache",
 }
+# Non-source extensions to skip for per-file LLM documentation
+SKIP_EXTS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2",
+    ".ttf", ".eot", ".mp3", ".mp4", ".wav", ".webm", ".zip", ".tar",
+    ".gz", ".lock", ".map", ".min.js", ".min.css",
+}
 MAX_FILE_SIZE = 100_000  # 100KB max per file
+MAX_FILES = 60  # cap number of files sent to LLM
+CONCURRENCY = 6  # parallel LLM calls at once
 
 
 class DocumentationGenerator:
@@ -35,12 +45,25 @@ class DocumentationGenerator:
 
     def __init__(self):
         settings = get_settings()
+        # Use gpt-4o-mini for per-file docs (faster + cheaper) and gpt-4o for summaries
+        self.llm_fast = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            openai_api_key=settings.openai_api_key,
+            max_tokens=1500,
+            request_timeout=30,
+        )
         self.llm = ChatOpenAI(
             model="gpt-4o",
             temperature=0.2,
             openai_api_key=settings.openai_api_key,
+            max_tokens=2000,
+            request_timeout=45,
         )
         self.parser = ParserService()
+        # Per-file cache: (repo_id, file_path, content_hash) -> doc dict
+        self._file_cache: Dict[str, Dict[str, Any]] = {}
+        self._semaphore = asyncio.Semaphore(CONCURRENCY)
 
     # ------------------------------------------------------------------
     # Public API
@@ -62,20 +85,23 @@ class DocumentationGenerator:
         # 1. Walk the tree and collect file metadata
         tree_str, file_paths = self._walk_tree(repo_path)
 
-        # 2. Generate per-file documentation
-        file_docs: List[Dict[str, Any]] = []
-        for fpath in file_paths:
+        # 2. Generate per-file documentation IN PARALLEL (capped at CONCURRENCY)
+        async def _safe_doc(fpath: str) -> Optional[Dict[str, Any]]:
             try:
-                doc = await self._document_file(repo_path, fpath)
-                if doc:
-                    file_docs.append(doc)
+                return await self._document_file(repo_path, fpath)
             except Exception as exc:
                 logger.warning("Skipping %s: %s", fpath, exc)
+                return None
 
-        # 3. Build high-level summaries via LLM
-        overview = await self._generate_overview(repo_path, tree_str, file_docs)
-        architecture = await self._generate_architecture(tree_str, file_docs)
-        dependencies = await self._generate_dependencies(repo_path, file_docs)
+        results = await asyncio.gather(*[_safe_doc(fp) for fp in file_paths])
+        file_docs: List[Dict[str, Any]] = [d for d in results if d]
+
+        # 3. Build high-level summaries via LLM — all three in parallel
+        overview, architecture, dependencies = await asyncio.gather(
+            self._generate_overview(repo_path, tree_str, file_docs),
+            self._generate_architecture(tree_str, file_docs),
+            self._generate_dependencies(repo_path, file_docs),
+        )
 
         return {
             "overview": overview,
@@ -97,7 +123,7 @@ class DocumentationGenerator:
     # ------------------------------------------------------------------
 
     def _walk_tree(self, repo_path: str) -> tuple:
-        """Return (tree_string, list_of_relative_file_paths)."""
+        """Return (tree_string, list_of_relative_file_paths). Filters non-source files."""
         lines: List[str] = []
         file_paths: List[str] = []
 
@@ -113,8 +139,11 @@ class DocumentationGenerator:
             for i, fname in enumerate(files):
                 connector = "├── " if (i < len(files) - 1 or dirs) else "└── "
                 lines.append(f"{prefix}{connector}{fname}")
-                rel = os.path.relpath(os.path.join(directory, fname), repo_path).replace("\\", "/")
-                file_paths.append(rel)
+                ext = os.path.splitext(fname)[1].lower()
+                # Only queue source-code files for LLM documentation
+                if ext not in SKIP_EXTS:
+                    rel = os.path.relpath(os.path.join(directory, fname), repo_path).replace("\\", "/")
+                    file_paths.append(rel)
 
             for i, dname in enumerate(dirs):
                 connector = "├── " if i < len(dirs) - 1 else "└── "
@@ -123,6 +152,10 @@ class DocumentationGenerator:
                 _recurse(os.path.join(directory, dname), prefix + extension)
 
         _recurse(repo_path)
+        # Cap number of files to avoid excessive LLM calls
+        if len(file_paths) > MAX_FILES:
+            logger.info("Capping documentation to %d of %d files", MAX_FILES, len(file_paths))
+            file_paths = file_paths[:MAX_FILES]
         return "\n".join(lines), file_paths
 
     # ------------------------------------------------------------------
@@ -157,6 +190,13 @@ class DocumentationGenerator:
                 "sections": [],
             }
 
+        # Check per-file cache by content hash
+        content_hash = hashlib.md5(source.encode("utf-8")).hexdigest()
+        cache_key = f"{repo_path}::{rel_path}::{content_hash}"
+        if cache_key in self._file_cache:
+            logger.debug("Cache hit for %s", rel_path)
+            return self._file_cache[cache_key]
+
         # Attempt AST parse for richer context
         lang = self._detect_lang(rel_path)
         ast_nodes = []
@@ -171,12 +211,14 @@ class DocumentationGenerator:
         sections = await self._build_file_sections(rel_path, source, lang, ast_nodes)
         summary = sections[0]["content"] if sections else ""
 
-        return {
+        result = {
             "path": rel_path,
             "language": lang,
             "summary": summary,
             "sections": sections,
         }
+        self._file_cache[cache_key] = result
+        return result
 
     async def _build_file_sections(
         self, rel_path: str, source: str, lang: str, ast_nodes: list
@@ -215,10 +257,11 @@ Source code:
 ```"""
 
         try:
-            response = await self.llm.ainvoke([
-                SystemMessage(content="You are a documentation engineer. Output only markdown."),
-                HumanMessage(content=prompt),
-            ])
+            async with self._semaphore:
+                response = await self.llm_fast.ainvoke([
+                    SystemMessage(content="You are a documentation engineer. Output only markdown."),
+                    HumanMessage(content=prompt),
+                ])
             text = response.content.strip()
         except Exception as exc:
             logger.error("LLM documentation failed for %s: %s", rel_path, exc)

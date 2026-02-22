@@ -1,14 +1,19 @@
 """
-Simple file-based persistence for repositories and users
+Simple file-based persistence for repositories, users, walkthroughs, and documentation
 """
 
 import json
 import os
-from typing import Dict, Optional
+import base64
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 
 from app.config import get_settings
-from app.models.schemas import Repository, User
+from app.models.schemas import (
+    Repository, User,
+    WalkthroughScript, ScriptSegment, ViewMode,
+    AudioWalkthrough, AudioSegment,
+)
 
 settings = get_settings()
 
@@ -16,6 +21,10 @@ settings = get_settings()
 PERSISTENCE_DIR = os.path.join(settings.repos_directory, ".persistence")
 REPOS_FILE = os.path.join(PERSISTENCE_DIR, "repositories.json")
 USERS_FILE = os.path.join(PERSISTENCE_DIR, "users.json")
+WALKTHROUGHS_FILE = os.path.join(PERSISTENCE_DIR, "walkthroughs.json")
+AUDIO_WALKTHROUGHS_FILE = os.path.join(PERSISTENCE_DIR, "audio_walkthroughs.json")
+AUDIO_BYTES_DIR = os.path.join(PERSISTENCE_DIR, "audio_bytes")
+DOCS_CACHE_FILE = os.path.join(PERSISTENCE_DIR, "documentation_cache.json")
 
 
 def ensure_persistence_dir():
@@ -152,4 +161,254 @@ def load_users() -> Dict[str, User]:
         return users
     except Exception as e:
         print(f"Error loading users: {e}")
+        return {}
+
+
+# ============================================================
+# Walkthrough Persistence
+# ============================================================
+
+def save_walkthroughs(walkthroughs: Dict[str, WalkthroughScript]):
+    """Save walkthrough scripts to file"""
+    ensure_persistence_dir()
+
+    data = {}
+    for wt_id, wt in walkthroughs.items():
+        data[wt_id] = {
+            "id": wt.id,
+            "file_path": wt.file_path,
+            "title": wt.title,
+            "summary": wt.summary,
+            "view_mode": wt.view_mode.value,
+            "segments": [
+                {
+                    "id": seg.id,
+                    "order": seg.order,
+                    "text": seg.text,
+                    "start_line": seg.start_line,
+                    "end_line": seg.end_line,
+                    "highlight_lines": seg.highlight_lines,
+                    "duration_estimate": seg.duration_estimate,
+                    "code_context": seg.code_context,
+                }
+                for seg in wt.segments
+            ],
+            "total_duration": wt.total_duration,
+            "created_at": wt.created_at.isoformat() if wt.created_at else None,
+            "metadata": wt.metadata,
+        }
+
+    with open(WALKTHROUGHS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_walkthroughs() -> Dict[str, WalkthroughScript]:
+    """Load walkthrough scripts from file"""
+    if not os.path.exists(WALKTHROUGHS_FILE):
+        return {}
+
+    try:
+        with open(WALKTHROUGHS_FILE, "r") as f:
+            data = json.load(f)
+
+        walkthroughs: Dict[str, WalkthroughScript] = {}
+        for wt_id, wt_data in data.items():
+            created_at = datetime.utcnow()
+            if wt_data.get("created_at"):
+                try:
+                    created_at = datetime.fromisoformat(wt_data["created_at"])
+                except Exception:
+                    pass
+
+            segments = [
+                ScriptSegment(
+                    id=seg["id"],
+                    order=seg["order"],
+                    text=seg["text"],
+                    start_line=seg["start_line"],
+                    end_line=seg["end_line"],
+                    highlight_lines=seg.get("highlight_lines", []),
+                    duration_estimate=seg.get("duration_estimate", 0),
+                    code_context=seg.get("code_context"),
+                )
+                for seg in wt_data.get("segments", [])
+            ]
+
+            walkthroughs[wt_id] = WalkthroughScript(
+                id=wt_data["id"],
+                file_path=wt_data["file_path"],
+                title=wt_data["title"],
+                summary=wt_data["summary"],
+                view_mode=ViewMode(wt_data.get("view_mode", "developer")),
+                segments=segments,
+                total_duration=wt_data.get("total_duration", 0),
+                created_at=created_at,
+                metadata=wt_data.get("metadata", {}),
+            )
+
+        return walkthroughs
+    except Exception as e:
+        print(f"Error loading walkthroughs: {e}")
+        return {}
+
+
+# ============================================================
+# Audio Walkthrough Persistence
+# ============================================================
+
+def save_audio_walkthroughs(audio_walkthroughs: Dict[str, AudioWalkthrough]):
+    """Save audio walkthrough metadata to file"""
+    ensure_persistence_dir()
+
+    data = {}
+    for aw_id, aw in audio_walkthroughs.items():
+        data[aw_id] = {
+            "id": aw.id,
+            "walkthrough_script_id": aw.walkthrough_script_id,
+            "file_path": aw.file_path,
+            "audio_segments": [
+                {
+                    "id": seg.id,
+                    "script_segment_id": seg.script_segment_id,
+                    "audio_url": seg.audio_url,
+                    "duration": seg.duration,
+                    "start_time": seg.start_time,
+                    "end_time": seg.end_time,
+                }
+                for seg in aw.audio_segments
+            ],
+            "full_audio_url": aw.full_audio_url,
+            "total_duration": aw.total_duration,
+            "created_at": aw.created_at.isoformat() if aw.created_at else None,
+        }
+
+    with open(AUDIO_WALKTHROUGHS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_audio_walkthroughs() -> Dict[str, AudioWalkthrough]:
+    """Load audio walkthrough metadata from file"""
+    if not os.path.exists(AUDIO_WALKTHROUGHS_FILE):
+        return {}
+
+    try:
+        with open(AUDIO_WALKTHROUGHS_FILE, "r") as f:
+            data = json.load(f)
+
+        audio_walkthroughs: Dict[str, AudioWalkthrough] = {}
+        for aw_id, aw_data in data.items():
+            created_at = datetime.utcnow()
+            if aw_data.get("created_at"):
+                try:
+                    created_at = datetime.fromisoformat(aw_data["created_at"])
+                except Exception:
+                    pass
+
+            audio_segments = [
+                AudioSegment(
+                    id=seg["id"],
+                    script_segment_id=seg["script_segment_id"],
+                    audio_url=seg["audio_url"],
+                    duration=seg["duration"],
+                    start_time=seg["start_time"],
+                    end_time=seg["end_time"],
+                )
+                for seg in aw_data.get("audio_segments", [])
+            ]
+
+            audio_walkthroughs[aw_id] = AudioWalkthrough(
+                id=aw_data["id"],
+                walkthrough_script_id=aw_data["walkthrough_script_id"],
+                file_path=aw_data["file_path"],
+                audio_segments=audio_segments,
+                full_audio_url=aw_data.get("full_audio_url"),
+                total_duration=aw_data.get("total_duration", 0),
+                created_at=created_at,
+            )
+
+        return audio_walkthroughs
+    except Exception as e:
+        print(f"Error loading audio walkthroughs: {e}")
+        return {}
+
+
+def save_audio_bytes(audio_bytes_store: Dict[str, bytes]):
+    """Save audio bytes to individual files on disk"""
+    os.makedirs(AUDIO_BYTES_DIR, exist_ok=True)
+
+    # Write a manifest of which walkthrough IDs have audio
+    manifest = list(audio_bytes_store.keys())
+    with open(os.path.join(AUDIO_BYTES_DIR, "manifest.json"), "w") as f:
+        json.dump(manifest, f)
+
+    for wt_id, audio_data in audio_bytes_store.items():
+        audio_path = os.path.join(AUDIO_BYTES_DIR, f"{wt_id}.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(audio_data)
+
+
+def load_audio_bytes() -> Dict[str, bytes]:
+    """Load audio bytes from disk"""
+    manifest_path = os.path.join(AUDIO_BYTES_DIR, "manifest.json")
+    if not os.path.exists(manifest_path):
+        return {}
+
+    try:
+        with open(manifest_path, "r") as f:
+            manifest = json.load(f)
+
+        audio_bytes_store: Dict[str, bytes] = {}
+        for wt_id in manifest:
+            audio_path = os.path.join(AUDIO_BYTES_DIR, f"{wt_id}.mp3")
+            if os.path.exists(audio_path):
+                with open(audio_path, "rb") as f:
+                    audio_bytes_store[wt_id] = f.read()
+
+        return audio_bytes_store
+    except Exception as e:
+        print(f"Error loading audio bytes: {e}")
+        return {}
+
+
+def delete_audio_bytes(walkthrough_id: str):
+    """Delete audio bytes file for a specific walkthrough"""
+    audio_path = os.path.join(AUDIO_BYTES_DIR, f"{walkthrough_id}.mp3")
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+
+    # Update manifest
+    manifest_path = os.path.join(AUDIO_BYTES_DIR, "manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+            manifest = [wid for wid in manifest if wid != walkthrough_id]
+            with open(manifest_path, "w") as f:
+                json.dump(manifest, f)
+        except Exception:
+            pass
+
+
+# ============================================================
+# Documentation Cache Persistence
+# ============================================================
+
+def save_documentation_cache(docs_cache: Dict[str, Any]):
+    """Save documentation cache to file"""
+    ensure_persistence_dir()
+
+    with open(DOCS_CACHE_FILE, "w") as f:
+        json.dump(docs_cache, f, indent=2, default=str)
+
+
+def load_documentation_cache() -> Dict[str, Any]:
+    """Load documentation cache from file"""
+    if not os.path.exists(DOCS_CACHE_FILE):
+        return {}
+
+    try:
+        with open(DOCS_CACHE_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading documentation cache: {e}")
         return {}
