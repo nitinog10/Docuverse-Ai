@@ -116,7 +116,7 @@ The flagship feature. A fully custom audio-synced code player:
 │  ┌─────────┐ │  ┌────────────────┐  │                               │
 │  │ Dep.    │ │  │ Documentation  │  │  ┌─────────────────────────┐  │
 │  │ Graph   │ │  │ Generator      │  │  │ Live Sandbox            │  │
-│  │ (DAG)   │ │  │ (GPT-4o)      │  │  │ • Python / JS runtime   │  │
+│  │ (DAG)   │ │  │ (GPT-4o)       │  │  │ • Python / JS runtime   │  │
 │  └─────────┘ │  └────────────────┘  │  └─────────────────────────┘  │
 │              │                      │                               │
 └──────────────┴──────────────────────┴───────────────────────────────┘
