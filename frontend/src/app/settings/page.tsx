@@ -108,8 +108,8 @@ export default function SettingsPage() {
                   
                   <div className="flex items-center gap-4 mb-6">
                     <div className="w-20 h-20 rounded-full bg-dv-accent/20 flex items-center justify-center overflow-hidden">
-                      {user?.avatar_url ? (
-                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                      {user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <User className="w-10 h-10 text-dv-accent" />
                       )}

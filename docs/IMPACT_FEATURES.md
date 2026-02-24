@@ -173,7 +173,7 @@ Frontend (ImpactPanel.tsx)
 
 **File:** `frontend/src/components/walkthrough/ImpactPanel.tsx`
 
-1. **API calls** — `files.getCodebaseImpact(repoId)` or `files.getImpact(repoId, path, symbol)` via the centralized API client in `lib/api.ts`
+1.**API calls** — `files.getCodebaseImpact(repoId)` or `files.getImpact(repoId, path, symbol)` via the centralized API client in `lib/api.ts`
 2. **Mode toggle** — User switches between "Codebase" and "Single File" analysis
 3. **Data display:**
    - Risk badge (color-coded: red/yellow/green)
@@ -212,7 +212,7 @@ Frontend (ImpactPanel.tsx)
                     │  Symbol Bonus:  −10 if specific symbol   │
                     │                 (narrower scope)         │
                     │                                          │
-                    │  ≥ 70 → HIGH    ≥ 35 → MEDIUM   < 35 → LOW │
+                    │  ≥ 70 → HIGH  ≥ 35 → MEDIUM < 35 → LOW   │
                     └──────────────────────────────────────────┘
 ```
 
