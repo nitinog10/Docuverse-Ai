@@ -15,7 +15,7 @@
 
 <br/>
 
-> *Connect any GitHub repository → AI parses every file with Tree-sitter → GPT-4o generates narrated walkthroughs → Press Play and watch code explain itself with synced audio, auto-scrolling, and live highlighting — like a YouTube video for your codebase.*
+> *Connect any GitHub repository → AI parses every file with Tree-sitter → LLM generates narrated walkthroughs → Press Play and watch code explain itself with synced audio, auto-scrolling, and live highlighting — like a YouTube video for your codebase.*
 
 </div>
 
