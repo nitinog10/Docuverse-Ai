@@ -15,7 +15,7 @@
 
 <br/>
 
-> *Connect any GitHub repository → AI parses every file with Tree-sitter → GPT-4o generates narrated walkthroughs → Press Play and watch code explain itself with synced audio, auto-scrolling, and live highlighting — like a YouTube video for your codebase.*
+> *Connect any GitHub repository → AI parses every file with Tree-sitter → LLM generates narrated walkthroughs → Press Play and watch code explain itself with synced audio, auto-scrolling, and live highlighting — like a YouTube video for your codebase.*
 
 </div>
 
@@ -49,7 +49,7 @@ You select a file  →  AI understands it  →  Press ▶ Play  →  An AI Senio
 
 ### 🎙️ Auto-Cast Walkthrough Player
 The flagship feature. A fully custom audio-synced code player:
-- **AI-generated narration** — GPT-4o writes segment-by-segment explanations referencing exact line ranges
+- **AI-generated narration** — LLM writes segment-by-segment explanations referencing exact line ranges
 - **Dual audio engine** — ElevenLabs/Edge-TTS for premium AI voice; instant browser TTS fallback (zero wait)
 - **Real-time sync** — Audio playback is married to code highlighting. As the narrator speaks about lines 42–58, those lines auto-scroll into view and glow
 - **Full playback controls** — Play / Pause / Skip / Seek / Speed (0.5x–2x) / Mute
@@ -116,7 +116,7 @@ The flagship feature. A fully custom audio-synced code player:
 │  ┌─────────┐ │  ┌────────────────┐  │                               │
 │  │ Dep.    │ │  │ Documentation  │  │  ┌─────────────────────────┐  │
 │  │ Graph   │ │  │ Generator      │  │  │ Live Sandbox            │  │
-│  │ (DAG)   │ │  │ (GPT-4o)      │  │  │ • Python / JS runtime   │  │
+│  │ (DAG)   │ │  │ (GPT-4o)       │  │  │ • Python / JS runtime   │  │
 │  └─────────┘ │  └────────────────┘  │  └─────────────────────────┘  │
 │              │                      │                               │
 └──────────────┴──────────────────────┴───────────────────────────────┘
@@ -591,7 +591,7 @@ DocuVerse-Ai/
 ```
 ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
 │          │     │          │     │          │     │          │     │          │
-│ CONNECT  │────▶│ ANALYZE  │────▶│ EXPLORE  │────▶│ PLAY     │────▶│ VERIFY   │
+│ CONNECT  │────▶│ ANALYZE  │────▶│ EXPLORE │────▶│ PLAY     │────▶│ VERIFY  │
 │          │     │          │     │          │     │          │     │          │
 │ GitHub   │     │ Clone +  │     │ File     │     │ Auto-Cast│     │ Sandbox  │
 │ OAuth    │     │ Tree-    │     │ Explorer │     │ Player   │     │ + Impact │
@@ -728,7 +728,7 @@ This project is built for hackathon demonstration purposes.
 
 <div align="center">
 
-**Built with ❤️ by Team DocuVerse**
+**Built with ❤️ by Team BitMask**
 
 *Transforming the way developers understand code — one walkthrough at a time.*
 
