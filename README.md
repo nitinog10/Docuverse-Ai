@@ -49,7 +49,7 @@ You select a file  →  AI understands it  →  Press ▶ Play  →  An AI Senio
 
 ### 🎙️ Auto-Cast Walkthrough Player
 The flagship feature. A fully custom audio-synced code player:
-- **AI-generated narration** — GPT-4o writes segment-by-segment explanations referencing exact line ranges
+- **AI-generated narration** — LLM writes segment-by-segment explanations referencing exact line ranges
 - **Dual audio engine** — ElevenLabs/Edge-TTS for premium AI voice; instant browser TTS fallback (zero wait)
 - **Real-time sync** — Audio playback is married to code highlighting. As the narrator speaks about lines 42–58, those lines auto-scroll into view and glow
 - **Full playback controls** — Play / Pause / Skip / Seek / Speed (0.5x–2x) / Mute
