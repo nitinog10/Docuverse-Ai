@@ -591,7 +591,7 @@ DocuVerse-Ai/
 ```
 ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
 │          │     │          │     │          │     │          │     │          │
-│ CONNECT  │────▶│ ANALYZE  │────▶│ EXPLORE  │────▶│ PLAY     │────▶│ VERIFY   │
+│ CONNECT  │────▶│ ANALYZE  │────▶│ EXPLORE │────▶│ PLAY     │────▶│ VERIFY  │
 │          │     │          │     │          │     │          │     │          │
 │ GitHub   │     │ Clone +  │     │ File     │     │ Auto-Cast│     │ Sandbox  │
 │ OAuth    │     │ Tree-    │     │ Explorer │     │ Player   │     │ + Impact │
