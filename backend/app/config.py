@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # GitHub OAuth
     github_client_id: str = ""
     github_client_secret: str = ""
-    github_redirect_uri: str = "https://docuverse-ai-jg3h.vercel.app/api/auth/callback/github"
+    github_redirect_uri: str = "https://docuverse-ai-y1za.vercel.app/api/auth/callback/github"
     
     # OpenAI
     openai_api_key: str = ""
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     
     # Frontend
-    frontend_url: str = "https://docuverse-ai-jg3h.vercel.app"
+    frontend_url: str = "https://docuverse-ai-y1za.vercel.app"
     
     # Repository Storage
     repos_directory: str = "./repos"

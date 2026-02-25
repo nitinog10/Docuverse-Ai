@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
     allowed_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://docuverse-ai-jg3h.vercel.app",
+        "https://docuverse-ai-y1za.vercel.app",
         settings.frontend_url,
     ]
     # Render sets RENDER_EXTERNAL_URL automatically
