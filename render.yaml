@@ -1,0 +1,39 @@
+# Render Blueprint – https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: docuverse-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter          # choose: free | starter | standard | pro
+    region: oregon         # or ohio, frankfurt, singapore, etc.
+    healthCheckPath: /health
+    envVars:
+      # ---- Required ----
+      - key: OPENAI_API_KEY
+        sync: false        # set manually in Render dashboard
+      - key: SECRET_KEY
+        generateValue: true
+      # ---- GitHub OAuth ----
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_REDIRECT_URI
+        sync: false
+      # ---- Optional: ElevenLabs TTS ----
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      # ---- Frontend URL (for CORS) ----
+      - key: FRONTEND_URL
+        sync: false        # e.g. https://your-frontend.onrender.com
+      # ---- Persistence paths (use Render Disk if data must survive deploys) ----
+      - key: CHROMA_PERSIST_DIRECTORY
+        value: /app/chroma_db
+      - key: REPOS_DIRECTORY
+        value: /app/repos
+    # Uncomment below to attach a Render Disk for persistent storage
+    # disk:
+    #   name: docuverse-data
+    #   mountPath: /app/data
+    #   sizeGB: 1

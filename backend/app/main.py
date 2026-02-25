@@ -52,13 +52,20 @@ def create_app() -> FastAPI:
     )
     
     # CORS Configuration - Allow frontend to make requests
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        settings.frontend_url,
+    ]
+    # Render sets RENDER_EXTERNAL_URL automatically
+    import os
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    if render_url:
+        allowed_origins.append(render_url)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            settings.frontend_url
-        ],
+        allow_origins=[o for o in allowed_origins if o],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],

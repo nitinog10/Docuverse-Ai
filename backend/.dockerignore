@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+venv/
+.venv/
+repos/
+chroma_db/
+*.egg-info
+.git
+.gitignore
+.mypy_cache
+.pytest_cache
+*.md
