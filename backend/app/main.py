@@ -52,16 +52,21 @@ def create_app() -> FastAPI:
     )
     
     # CORS Configuration - Allow frontend to make requests
+    import os
     allowed_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://docuverse-ai-jg3h.vercel.app",
         settings.frontend_url,
     ]
     # Render sets RENDER_EXTERNAL_URL automatically
-    import os
     render_url = os.getenv("RENDER_EXTERNAL_URL", "")
     if render_url:
         allowed_origins.append(render_url)
+    # Also allow any Vercel preview deployments
+    extra_origins = os.getenv("EXTRA_CORS_ORIGINS", "")
+    if extra_origins:
+        allowed_origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
 
     app.add_middleware(
         CORSMiddleware,

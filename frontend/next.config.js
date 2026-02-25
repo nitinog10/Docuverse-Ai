@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
+// NEXT_PUBLIC_API_URL should include /api (e.g. https://docuverse-main.onrender.com/api)
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+// Strip trailing /api for the rewrite base
+const backendBase = apiUrl.replace(/\/api\/?$/, '')
+
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -8,7 +13,7 @@ const nextConfig = {
     return [
       {
         source: '/api/backend/:path*',
-        destination: 'http://localhost:8000/api/:path*',
+        destination: `${backendBase}/api/:path*`,
       },
     ]
   },

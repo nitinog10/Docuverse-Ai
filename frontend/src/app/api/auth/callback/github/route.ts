@@ -27,8 +27,9 @@ export async function GET(request: NextRequest) {
 
   try {
     // Forward the OAuth callback to the backend
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    const callbackUrl = `${backendUrl}/api/auth/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+    // NEXT_PUBLIC_API_URL includes /api suffix (e.g. https://docuverse-main.onrender.com/api)
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+    const callbackUrl = `${apiBaseUrl}/auth/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
     
     const backendResponse = await fetch(callbackUrl, {
       method: 'GET',
